@@ -1,6 +1,5 @@
 /// Tauri commands exposed to the frontend.
 use anyhow::Result;
-use serde::Serialize;
 use tauri::{AppHandle, State};
 
 use crate::AppState;

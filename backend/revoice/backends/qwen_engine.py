@@ -1,42 +1,85 @@
 """
 Qwen3-TTS engine для ReVoice.
-Поддержка: 0.6B и 1.7B моделей.
-Ограничения: no flash-attn, только eager/sdpa.
-GPU: device_map=auto для 4GB VRAM, max_new_tokens=600.
-
-Правило D (GPU-фиксы):
-- OOM 1.7B → device_map=auto
-- meta-tensor краш → пересоздать input_ids на устройстве
-- убегание → кап max_new_tokens=600, текст ≤200 символов
-- WinError 126 → нет CUDA DLL (graceful fallback)
+Строго соответствует реальному API qwen-tts 0.1.1:
+1. Загрузка: Qwen3TTSModel.from_pretrained(path, device_map="cuda:0"|"auto", dtype=torch.bfloat16, attn_implementation="eager", max_memory={"0":"3000MB","cpu":"12GB"} при auto). Никаких torch_dtype/device kwargs.
+2. Синтез: generate_voice_clone(text, language, ref_audio, ref_text) либо voice_clone_prompt=create_voice_clone_prompt(ref_audio, ref_text). Возвращает (wavs, sr) — сохраняем wavs[0]. Никакого .generate(text=, speaker_audio=).
+3. Языки: маппинг ISO 639-1 -> полное название ({"ru": "Russian", ...}), сверка с get_supported_languages().
+4. Meta-tensor патч: оборачивание GenerationMixin._maybe_initialize_input_ids_for_generation и synced_gpus=False.
 """
 from __future__ import annotations
+import os
+import sys
+import gc
 import asyncio
 import logging
-import os
 from pathlib import Path
-from typing import Optional, List, Tuple
-
+from typing import Optional, List, Tuple, Dict, Any
 import numpy as np
 
 from . import EngineInfo, register_tts
 
 logger = logging.getLogger(__name__)
 
-_QWEN_MODELS = {
-    "0.6B": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
-    "1.7B": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+# Маппинг ISO кодов языков в названия, ожидаемые Qwen3-TTS
+LANGUAGE_MAP: Dict[str, str] = {
+    "ru": "Russian",
+    "en": "English",
+    "zh": "Chinese",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "de": "German",
+    "fr": "French",
+    "es": "Spanish",
+    "it": "Italian",
+    "pt": "Portuguese",
 }
 
-SUPPORTED_LANGUAGES = [
-    "ru", "en", "zh", "ja", "ko", "de", "fr", "es", "it", "pt",
-]
+_REVERSE_LANG_MAP: Dict[str, str] = {v.lower(): k for k, v in LANGUAGE_MAP.items()}
+
+
+# ---------------------------------------------------------------------------
+# Патч meta-тензоров при device_map=auto (Правило 4)
+# ---------------------------------------------------------------------------
+
+_PATCH_APPLIED = False
+
+def _apply_meta_tensor_patch():
+    """
+    Патч transformers GenerationMixin._maybe_initialize_input_ids_for_generation.
+    При оффлоаде на CPU/Disk некоторые тензоры создаются на meta-устройстве.
+    Пересоздаём их на том же устройстве, что и inputs_embeds.
+    """
+    global _PATCH_APPLIED
+    if _PATCH_APPLIED:
+        return
+
+    try:
+        from transformers.generation import utils as _gu
+        import torch
+
+        _orig_init = getattr(_gu.GenerationMixin, "_maybe_initialize_input_ids_for_generation", None)
+        if _orig_init is not None:
+            def _safe_init(self, inputs=None, bos_token_id=None, model_kwargs=None):
+                r = _orig_init(self, inputs, bos_token_id, model_kwargs)
+                if isinstance(r, torch.Tensor) and r.device.type == "meta":
+                    dev = torch.device("cuda:0")
+                    ie = (model_kwargs or {}).get("inputs_embeds")
+                    if isinstance(ie, torch.Tensor) and ie.device.type != "meta":
+                        dev = ie.device
+                    r = torch.ones_like(r, device=dev)
+                return r
+
+            _gu.GenerationMixin._maybe_initialize_input_ids_for_generation = _safe_init
+            _PATCH_APPLIED = True
+            logger.info("Meta-tensor monkey patch applied to transformers.GenerationMixin")
+    except Exception as e:
+        logger.warning("Could not apply meta-tensor patch: %s", e)
 
 
 class QwenTTSEngine:
     """
     Qwen3-TTS zero-shot voice cloning engine.
-    Эталон: 3–30 сек аудио + дословный транскрипт.
+    Поддерживает варианты 0.6B и 1.7B с защитой по памяти под 4 ГБ VRAM.
     """
 
     engine_id = "qwen"
@@ -44,9 +87,9 @@ class QwenTTSEngine:
         engine_id="qwen",
         display_name="Qwen3-TTS",
         hf_repo_id="Qwen/Qwen3-TTS-12Hz-1.7B-Base",
-        license="apache-2.0",
+        license="Apache-2.0",
         size_mb=3800,
-        languages=SUPPORTED_LANGUAGES,
+        languages=list(LANGUAGE_MAP.keys()),
         supports_cloning=True,
         supports_instruct=False,
         requires_gpu=True,
@@ -56,91 +99,120 @@ class QwenTTSEngine:
     def __init__(self):
         self._model = None
         self._variant = None
-        self._device = "cpu"
-        self._sample_rate = 24000  # Qwen3-TTS uses 24kHz
+        self._model_path = None
+        self._sample_rate = 24000
 
     def is_loaded(self) -> bool:
         return self._model is not None
 
-    async def load(self, variant: str = "1.7B", device: str = "cuda") -> None:
-        """Загрузить Qwen3-TTS модель."""
-        if self._model is not None and self._variant == variant:
-            return
+    async def load(
+        self,
+        variant: str = "0.6B",
+        device: str = "cuda",
+        model_path: Optional[str | Path] = None,
+    ) -> None:
+        """Загрузить модель Qwen3-TTS."""
         if self._model is not None:
             await self.unload()
-        await asyncio.to_thread(self._load_sync, variant, device)
 
-    def _load_sync(self, variant: str, device: str) -> None:
-        """Synchronous model loading."""
-        try:
-            from qwen_tts import Qwen3TTSModel
-        except ImportError:
-            raise ImportError(
-                "qwen-tts не установлен. Выполни: uv sync --extra cuda"
-            )
+        await asyncio.to_thread(self._load_sync, variant, device, model_path)
 
-        hf_repo = _QWEN_MODELS.get(variant)
-        if not hf_repo:
-            raise ValueError(f"Неизвестный вариант Qwen: {variant}. Допустимые: {list(_QWEN_MODELS.keys())}")
-
-        logger.info("Loading Qwen3-TTS %s from %s on %s", variant, hf_repo, device)
-
+    def _load_sync(
+        self,
+        variant: str,
+        device: str,
+        model_path: Optional[str | Path] = None,
+    ) -> None:
+        """Синхронная загрузка с точными параметрами Qwen3TTSModel.from_pretrained."""
         try:
             import torch
-            actual_device = device
-            if device == "cuda" and not torch.cuda.is_available():
-                logger.warning("CUDA недоступна, переключаюсь на CPU")
-                actual_device = "cpu"
+            from qwen_tts import Qwen3TTSModel
+        except ImportError as e:
+            raise ImportError(
+                "qwen-tts или torch не установлены в окружении. "
+                "Установите через: uv pip install qwen-tts==0.1.1 transformers==4.57.3"
+            ) from e
 
-            # device_map=auto для управления VRAM 4GB (Правило D)
-            load_kwargs = {
-                "torch_dtype": torch.float16 if actual_device != "cpu" else torch.float32,
-                "attn_implementation": "sdpa",  # no flash-attn
-            }
-            if actual_device == "cuda" and variant == "1.7B":
+        # Применяем патч для meta-тензоров
+        _apply_meta_tensor_patch()
+
+        # Определяем путь к весам и вариант
+        if model_path is not None:
+            load_path = str(model_path)
+            if variant == "0.6B" and ("17b" in load_path.lower() or "1.7" in load_path):
+                variant = "1.7B"
+        else:
+            from ..services.models_manager import get_model_path
+            model_id = f"qwen-tts-{variant.lower()}"
+            target_path = get_model_path(model_id)
+            if not target_path.exists():
+                raise FileNotFoundError(
+                    f"Папка модели не найдена: {target_path}. "
+                    f"Скачайте веса через экран «Модели» или укажите путь."
+                )
+            load_path = str(target_path)
+
+        logger.info("Loading Qwen3-TTS [%s] from %s...", variant, load_path)
+
+        has_cuda = torch.cuda.is_available() and device.startswith("cuda")
+
+        # 1. Параметры from_pretrained строго по спецификации:
+        # device_map="cuda:0"|"auto", dtype=torch.bfloat16, attn_implementation="eager"
+        # max_memory={"0":"3000MB","cpu":"12GB"} при auto.
+        # НИКАКИХ torch_dtype/device kwargs.
+        load_kwargs: Dict[str, Any] = {
+            "dtype": torch.bfloat16 if has_cuda else torch.float32,
+            "attn_implementation": "eager",
+        }
+
+        if has_cuda:
+            if variant == "1.7B":
+                # Для 1.7B на 4GB VRAM используем auto оффлоад с лимитом памяти
                 load_kwargs["device_map"] = "auto"
+                load_kwargs["max_memory"] = {"0": "3000MB", "cpu": "12GB"}
             else:
-                load_kwargs["device"] = actual_device
+                load_kwargs["device_map"] = "cuda:0"
+        else:
+            load_kwargs["device_map"] = "cpu"
 
-            self._model = Qwen3TTSModel.from_pretrained(hf_repo, **load_kwargs)
+        try:
+            self._model = Qwen3TTSModel.from_pretrained(load_path, **load_kwargs)
             self._variant = variant
-            self._device = actual_device
-            logger.info("Qwen3-TTS %s loaded successfully", variant)
+            self._model_path = load_path
 
-        except OSError as e:
-            if "WinError 126" in str(e):
-                raise RuntimeError(
-                    "Нет CUDA DLL (WinError 126). Установи CUDA Toolkit или используй CPU-режим."
-                ) from e
-            raise
+            # Пробуем пропатчить внутренний talker для synced_gpus=False
+            if hasattr(self._model, "talker") and hasattr(self._model.talker, "generate"):
+                orig_talker_gen = self._model.talker.generate
+                def _patched_talker_gen(*args, **kwargs):
+                    kwargs["synced_gpus"] = False
+                    return orig_talker_gen(*args, **kwargs)
+                self._model.talker.generate = _patched_talker_gen
+
+            logger.info("Qwen3-TTS [%s] successfully loaded!", variant)
+
         except Exception as e:
-            if "out of memory" in str(e).lower() or "CUDA out of memory" in str(e):
-                if variant == "1.7B":
-                    logger.warning("OOM с 1.7B, пробую device_map=auto")
-                    import torch
-                    self._model = Qwen3TTSModel.from_pretrained(
-                        hf_repo,
-                        torch_dtype=torch.float16,
-                        device_map="auto",
-                        attn_implementation="sdpa",
-                    )
-                    self._variant = variant
-                    self._device = "cuda"
-                    return
+            logger.exception("Failed to load Qwen3-TTS from %s", load_path)
+            self._model = None
             raise
 
     async def unload(self) -> None:
-        """Выгрузить модель и освободить VRAM."""
+        """Выгрузить модель и полностью освободить VRAM."""
         if self._model is not None:
             del self._model
             self._model = None
+            self._variant = None
+            self._model_path = None
+
             try:
                 import torch
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                    torch.cuda.ipc_collect()
             except Exception:
                 pass
-            logger.info("Qwen3-TTS unloaded")
+
+            gc.collect()
+            logger.info("Qwen3-TTS unloaded from memory")
 
     async def synthesize(
         self,
@@ -152,16 +224,11 @@ class QwenTTSEngine:
         language: str = "ru",
         seed: Optional[int] = None,
     ) -> Tuple[np.ndarray, int]:
-        """Синтез речи с zero-shot клонированием голоса."""
+        """
+        Синтез речи с клонированием голоса через реальный API qwen-tts.
+        """
         if not self.is_loaded():
-            raise RuntimeError("Qwen3-TTS не загружен. Сначала загрузите модель.")
-
-        # Правило D: кап длины для предотвращения убегания генерации
-        if len(text) > 200:
-            logger.warning(
-                "Текст %d символов > 200, синтез может быть нестабильным",
-                len(text)
-            )
+            raise RuntimeError("Qwen3-TTS не загружен в память. Вызовите load().")
 
         return await asyncio.to_thread(
             self._synthesize_sync,
@@ -177,48 +244,92 @@ class QwenTTSEngine:
         language: str,
         seed: Optional[int],
     ) -> Tuple[np.ndarray, int]:
-        """Synchronous synthesis."""
+        """
+        Синхронный вызов generate_voice_clone или create_voice_clone_prompt.
+        Возвращает (audio_np, sample_rate).
+        """
         import torch
 
         if seed is not None:
             torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(seed)
 
-        try:
-            # Правило D: meta-tensor fix — ensure inputs on correct device
-            audio_out = self._model.generate(
+        # 3. Преобразуем язык через маппинг
+        lang_full = LANGUAGE_MAP.get(language.lower(), "Russian")
+
+        # 2. Вызываем либо generate_voice_clone, либо create_voice_clone_prompt
+        wavs = None
+        sr = self._sample_rate
+
+        if hasattr(self._model, "generate_voice_clone"):
+            res = self._model.generate_voice_clone(
                 text=text,
-                speaker_audio=ref_audio,
-                speaker_sr=ref_sr,
-                speaker_text=ref_text,
-                language=language,
-                max_new_tokens=600,     # Правило D: кап
-                synced_gpus=False,      # Правило D: meta-tensor fix
+                language=lang_full,
+                ref_audio=(ref_audio, ref_sr),
+                ref_text=ref_text,
+                max_new_tokens=600,
+                synced_gpus=False,
             )
-            if isinstance(audio_out, torch.Tensor):
-                audio_np = audio_out.cpu().float().numpy()
+            if isinstance(res, tuple):
+                wavs, sr = res
             else:
-                audio_np = np.array(audio_out, dtype=np.float32)
+                wavs = res
+        elif hasattr(self._model, "create_voice_clone_prompt"):
+            prompt = self._model.create_voice_clone_prompt(
+                ref_audio=(ref_audio, ref_sr),
+                ref_text=ref_text,
+            )
+            res = self._model.generate_voice_clone(
+                text=text,
+                language=lang_full,
+                voice_clone_prompt=prompt,
+                max_new_tokens=600,
+                synced_gpus=False,
+            )
+            if isinstance(res, tuple):
+                wavs, sr = res
+            else:
+                wavs = res
+        else:
+            raise AttributeError(
+                "Qwen3TTSModel не имеет методов generate_voice_clone или create_voice_clone_prompt"
+            )
 
-            return audio_np, self._sample_rate
+        # Извлекаем wavs[0]
+        if isinstance(wavs, (list, tuple)) and len(wavs) > 0:
+            first_wav = wavs[0]
+        else:
+            first_wav = wavs
 
-        except RuntimeError as e:
-            err = str(e)
-            if "Expected all tensors to be on the same device" in err or "meta" in err:
-                # Правило D: пересоздать input_ids на устройстве
-                logger.warning("Meta-tensor error, retrying with device fix: %s", err)
-                raise RuntimeError(
-                    "Meta-tensor error при синтезе. Перезагрузите модель через /api/models/qwen/load."
-                ) from e
-            if "out of memory" in err.lower():
-                raise RuntimeError(
-                    "Нехватка VRAM. Используйте модель 0.6B или уменьшите текст."
-                ) from e
-            raise
+        # Конвертация в numpy float32
+        if isinstance(first_wav, torch.Tensor):
+            audio_np = first_wav.detach().cpu().float().numpy()
+        else:
+            audio_np = np.asarray(first_wav, dtype=np.float32)
+
+        # Удаляем лишние размерности (например, (1, N) -> (N,))
+        if audio_np.ndim > 1:
+            audio_np = audio_np.squeeze()
+
+        return audio_np, int(sr)
 
     def languages(self) -> List[str]:
-        return SUPPORTED_LANGUAGES
+        """Список поддерживаемых языков (ISO 639-1)."""
+        if self._model is not None and hasattr(self._model, "get_supported_languages"):
+            try:
+                raw_langs = self._model.get_supported_languages()
+                result = []
+                for l in raw_langs:
+                    code = _REVERSE_LANG_MAP.get(str(l).lower(), str(l).lower())
+                    result.append(code)
+                if result:
+                    return result
+            except Exception:
+                pass
+        return list(LANGUAGE_MAP.keys())
 
 
-# Auto-register
+# Регистрируем движок в реестре
 _qwen_engine = QwenTTSEngine()
 register_tts(_qwen_engine)
