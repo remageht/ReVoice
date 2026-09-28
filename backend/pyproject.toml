@@ -2,7 +2,7 @@
 name = "revoice-server"
 version = "0.1.0"
 description = "ReVoice voice cloning backend"
-requires-python = "==3.11.*"
+requires-python = ">=3.10,<3.13"
 dependencies = [
     "fastapi==0.115.12",
     "uvicorn[standard]==0.34.3",

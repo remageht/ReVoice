@@ -32,6 +32,11 @@ try:
 except ImportError as e:
     logger.warning("Qwen engine not available: %s", e)
 
+try:
+    from .backends import fish_engine  # noqa: F401
+except ImportError as e:
+    logger.warning("Fish engine not available: %s", e)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
