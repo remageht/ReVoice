@@ -1,0 +1,1 @@
+# ReVoice server placeholder for Tauri bundler

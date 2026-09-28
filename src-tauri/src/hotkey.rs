@@ -1,7 +1,7 @@
 /// Global hotkey registration.
 /// Ctrl+Shift+V — синтез текста из буфера обмена в активный голос.
 use anyhow::Result;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 const SYNTH_HOTKEY: &str = "Ctrl+Shift+V";
@@ -10,7 +10,7 @@ pub fn register_hotkeys(handle: &AppHandle) -> Result<()> {
     let shortcut: Shortcut = SYNTH_HOTKEY.parse()
         .map_err(|e| anyhow::anyhow!("Invalid shortcut {}: {}", SYNTH_HOTKEY, e))?;
 
-    handle.global_shortcut().on_shortcut(shortcut, |app, shortcut, event| {
+    handle.global_shortcut().on_shortcut(shortcut, |app, _shortcut, event| {
         if event.state == ShortcutState::Pressed {
             tracing::info!("Global hotkey triggered: {}", SYNTH_HOTKEY);
             let app_handle = app.clone();

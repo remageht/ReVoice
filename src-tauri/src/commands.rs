@@ -1,15 +1,10 @@
 /// Tauri commands exposed to the frontend.
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::{AppHandle, State};
 
 use crate::AppState;
 
-#[derive(Serialize)]
-pub struct HealthResponse {
-    pub status: String,
-    pub version: String,
-}
 
 /// Open a native file dialog for audio import.
 #[tauri::command]

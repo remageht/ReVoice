@@ -9,7 +9,7 @@ QA-валидация аудио-сэмплов голоса.
 """
 from __future__ import annotations
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -30,6 +30,9 @@ class QAResult:
     duration_sec: Optional[float]
     rms_median: Optional[float]
     sample_rate: Optional[int]
+    peak: float = 0.0
+    verdict: str = "Не проверен"
+    rms_profile: list[float] = field(default_factory=list)
 
 
 async def validate_sample(
@@ -114,9 +117,23 @@ async def validate_sample(
             sample_rate=sr,
         )
 
+    # Downsample rms_values to 40 points for UI visualizer
+    points = 40
+    if len(rms_values) > points:
+        step = len(rms_values) / points
+        profile = [float(np.mean(rms_values[int(i * step):int((i + 1) * step)])) for i in range(points)]
+    else:
+        profile = [float(r) for r in rms_values]
+
+    peak = float(np.max(np.abs(data)))
+    if rms_median >= 0.04 and 5.0 <= duration <= 20.0:
+        verdict = "Отличный эталон (высокая четкость и оптимальная длина)"
+    else:
+        verdict = "Годен к синтезу"
+
     logger.info(
-        "Sample QA passed: dur=%.2fs rms=%.4f sr=%d",
-        duration, rms_median, sr,
+        "Sample QA passed: dur=%.2fs rms=%.4f sr=%d peak=%.2f",
+        duration, rms_median, sr, peak,
     )
     return QAResult(
         is_valid=True,
@@ -124,4 +141,7 @@ async def validate_sample(
         duration_sec=round(duration, 2),
         rms_median=round(rms_median, 4),
         sample_rate=sr,
+        peak=round(peak, 3),
+        verdict=verdict,
+        rms_profile=profile,
     )

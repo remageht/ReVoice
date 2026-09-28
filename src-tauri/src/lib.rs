@@ -1,6 +1,5 @@
 use std::sync::Mutex;
-use tauri::{Manager, State, AppHandle};
-use serde::{Serialize, Deserialize};
+use tauri::Manager;
 
 mod sidecar;
 mod tray;

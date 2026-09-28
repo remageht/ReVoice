@@ -31,6 +31,10 @@ export interface Sample {
   reference_text: string
   duration_sec?: number
   rms_median?: number
+  sample_rate?: number
+  peak?: number
+  verdict?: string
+  rms_profile?: number[]
   is_valid: boolean
   rejection_reason?: string
 }

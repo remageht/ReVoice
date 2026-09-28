@@ -2,8 +2,7 @@
 /// The Python backend runs as a bundled PyInstaller executable.
 /// On dev: spawns `uvicorn revoice.main:app` via tauri shell.
 use anyhow::{Context, Result};
-use std::sync::Arc;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager, Emitter};
 use tauri_plugin_shell::ShellExt;
 
 const BACKEND_PORT: u16 = 7851;
@@ -35,7 +34,7 @@ pub async fn start_sidecar(handle: &AppHandle) -> Result<()> {
     match sidecar_result {
         Ok(sidecar_cmd) => {
             tracing::info!("Starting bundled sidecar: {}", SIDECAR_NAME);
-            let (_rx, child) = sidecar_cmd
+            let (_rx, _child) = sidecar_cmd
                 .spawn()
                 .context("Failed to spawn Python sidecar")?;
 

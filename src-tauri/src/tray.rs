@@ -2,9 +2,8 @@
 use anyhow::Result;
 use tauri::{
     App,
-    image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
-    tray::{TrayIcon, TrayIconBuilder},
+    tray::TrayIconBuilder,
     Manager,
 };
 
@@ -18,7 +17,7 @@ pub fn setup_tray(app: &mut App) -> Result<()> {
 
     let _tray = TrayIconBuilder::new()
         .menu(&menu)
-        .menu_on_left_click(false)
+        .show_menu_on_left_click(false)
         .tooltip("ReVoice — студия голоса")
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => {

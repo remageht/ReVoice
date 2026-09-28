@@ -35,10 +35,14 @@ class SampleOut(BaseModel):
     id: str
     audio_path: str
     reference_text: str
-    duration_sec: Optional[float]
-    rms_median: Optional[float]
+    duration_sec: Optional[float] = None
+    rms_median: Optional[float] = None
+    sample_rate: Optional[int] = None
+    peak: Optional[float] = None
+    verdict: Optional[str] = None
+    rms_profile: Optional[List[float]] = None
     is_valid: bool
-    rejection_reason: Optional[str]
+    rejection_reason: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -91,18 +95,28 @@ async def _get_profile(profile_id: str, db: AsyncSession) -> VoiceProfile:
 
 
 def _to_out(p: VoiceProfile) -> ProfileOut:
-    samples = [
-        SampleOut(
+    samples = []
+    for s in (p.samples or []):
+        rms_prof = None
+        if getattr(s, "rms_profile_json", None):
+            try:
+                import json
+                rms_prof = json.loads(s.rms_profile_json)
+            except Exception:
+                pass
+        samples.append(SampleOut(
             id=s.id,
             audio_path=s.audio_path,
             reference_text=s.reference_text,
             duration_sec=s.duration_sec,
             rms_median=s.rms_median,
+            sample_rate=s.sample_rate,
+            peak=getattr(s, "peak", None),
+            verdict=getattr(s, "verdict", None),
+            rms_profile=rms_prof,
             is_valid=s.is_valid,
             rejection_reason=s.rejection_reason,
-        )
-        for s in (p.samples or [])
-    ]
+        ))
     return ProfileOut(
         id=p.id,
         name=p.name,
@@ -226,6 +240,7 @@ async def add_sample(
     # QA validation
     qa = await validate_sample(audio_path, reference_text)
 
+    import json
     sample = VoiceSample(
         id=sample_id,
         profile_id=profile_id,
@@ -234,6 +249,9 @@ async def add_sample(
         duration_sec=qa.duration_sec,
         rms_median=qa.rms_median,
         sample_rate=qa.sample_rate,
+        peak=qa.peak,
+        verdict=qa.verdict,
+        rms_profile_json=json.dumps(qa.rms_profile),
         is_valid=qa.is_valid,
         rejection_reason=qa.rejection_reason,
     )
@@ -250,6 +268,10 @@ async def add_sample(
         reference_text=sample.reference_text,
         duration_sec=sample.duration_sec,
         rms_median=sample.rms_median,
+        sample_rate=sample.sample_rate,
+        peak=sample.peak,
+        verdict=sample.verdict,
+        rms_profile=qa.rms_profile,
         is_valid=sample.is_valid,
         rejection_reason=sample.rejection_reason,
     )

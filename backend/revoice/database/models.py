@@ -58,6 +58,9 @@ class VoiceSample(Base):
     sample_rate: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     is_valid: Mapped[bool] = mapped_column(Boolean, default=True)
     rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    peak: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    verdict: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    rms_profile_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     profile: Mapped["VoiceProfile"] = relationship(back_populates="samples")
