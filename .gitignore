@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.eggs/
+*.so
+*.dll
+*.pyd
+
+# Revoice backend venv
+backend/.venv/
+backend/dist/
+backend/__pycache__/
+backend/**/__pycache__/
+
+# PyInstaller
+backend/build/
+backend/revoice_server/
+
+# Node
+node_modules/
+app/node_modules/
+
+# Rust / Tauri
+target/
+src-tauri/target/
+
+# Build outputs
+*.msi
+*.exe
+*.dmg
+*.AppImage
+*.deb
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Generated audio
+generations/
+voices/
+models/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Secrets
+.env
+.env.local
+
+# Tauri
+app/dist/
+app/.tauri/

@@ -1,0 +1,76 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ReVoice",
+  "identifier": "ru.revoice.app",
+  "version": "0.1.0",
+  "build": {
+    "frontendDist": "../app/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev --prefix ../app",
+    "beforeBuildCommand": "npm run build --prefix ../app"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "ReVoice",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "center": true,
+        "decorations": true,
+        "transparent": false
+      }
+    ],
+    "security": {
+      "csp": null
+    },
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true,
+      "tooltip": "ReVoice"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["rvproj"],
+        "name": "ReVoice Project",
+        "description": "ReVoice Project File"
+      }
+    ],
+    "windows": {
+      "wix": {
+        "language": "ru-RU",
+        "template": null
+      }
+    },
+    "resources": {
+      "revoice-server/**/*": "revoice-server"
+    }
+  },
+  "plugins": {
+    "shell": {
+      "open": true,
+      "sidecar": true
+    },
+    "updater": {
+      "pubkey": "",
+      "endpoints": []
+    },
+    "autostart": {
+      "enabled": false
+    }
+  }
+}
