@@ -93,12 +93,37 @@ export const apiProfiles = {
     api.delete(`/api/profiles/${profileId}/samples/${sampleId}`),
 }
 
+export interface ModelItem {
+  id: string
+  name: string
+  type: 'TTS' | 'STT' | 'LLM'
+  engine_id: string
+  variant: string
+  size_mb: number
+  license: string
+  description: string
+  disk_status: 'downloaded' | 'partial' | 'not_downloaded'
+  is_loaded: boolean
+  is_custom_path: boolean
+  local_path: string
+  download?: {
+    status?: string
+    progress_percent?: number
+    error?: string
+  }
+  validation_warning?: string
+}
+
 export const apiModels = {
-  list: () => api.get<EngineInfo[]>('/api/models').then(r => r.data),
-  load: (engineId: string, variant?: string) =>
-    api.post(`/api/models/${engineId}/load`, { variant: variant || 'default', device: 'cuda' }).then(r => r.data),
-  unload: (engineId: string) =>
-    api.post(`/api/models/${engineId}/unload`).then(r => r.data),
+  list: () => api.get<ModelItem[]>('/api/models').then(r => r.data),
+  getDir: () => api.get<{ models_dir: string; is_env_overridden: boolean }>('/api/models/dir').then(r => r.data),
+  migrateDir: (newDir: string, moveFiles: boolean = true) =>
+    api.post('/api/models/dir/migrate', { new_dir: newDir, move_files: moveFiles }).then(r => r.data),
+  download: (id: string) => api.post(`/api/models/${id}/download`).then(r => r.data),
+  setPath: (id: string, path: string) => api.post(`/api/models/${id}/set-path`, { path }).then(r => r.data),
+  load: (id: string) => api.post(`/api/models/${id}/load`, { device: 'cuda' }).then(r => r.data),
+  unload: (id: string) => api.post(`/api/models/${id}/unload`).then(r => r.data),
+  openFolder: (id: string) => api.post(`/api/models/${id}/open-folder`).then(r => r.data),
 }
 
 export const apiSynth = {

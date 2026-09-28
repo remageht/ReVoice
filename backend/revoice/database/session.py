@@ -12,6 +12,7 @@ class Base(DeclarativeBase):
 
 
 def _make_engine():
+    settings.ensure_dirs()
     # Use str() to handle Cyrillic paths on Windows
     url = f"sqlite+aiosqlite:///{settings.db_path.as_posix()}"
     return create_async_engine(

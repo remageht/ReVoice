@@ -15,13 +15,8 @@ _RU_ABBREVS = frozenset([
     "рис", "табл", "стр", "гл", "ч",
 ])
 
-# Pattern: sentence-ending punctuation followed by whitespace + capital or digit
-_SENTENCE_END = re.compile(
-    r'(?<![А-ЯA-Z]\.[А-ЯA-Z])'   # not initials like А.С.
-    r'(?<!\b(?:' + '|'.join(re.escape(a) for a in _RU_ABBREVS) + r'))'
-    r'([.!?…]{1,3}["»\)]?)'       # punctuation
-    r'(?=\s+[А-ЯA-Z\d"«\(])'     # followed by capital/digit/quote
-)
+# Candidate sentence boundary: punctuation followed by space and capital/digit/quote
+_CANDIDATE_PUNCT = re.compile(r'([.!?…]{1,3}["»\)]?)(\s+(?=[А-ЯA-Z\d"«\(])|$)')
 
 
 def split_text_ru(text: str, max_chars: int = 200) -> List[str]:
@@ -70,21 +65,36 @@ def split_text_ru(text: str, max_chars: int = 200) -> List[str]:
     return [c for c in chunks if c]
 
 
+def _is_abbrev_or_initial(prefix: str) -> bool:
+    """Check if the text immediately preceding the dot is an abbreviation or initial."""
+    prefix = prefix.rstrip()
+    if re.search(r'\b[А-ЯA-Z]\.[А-ЯA-Z]$', prefix) or re.search(r'\b[А-ЯA-Z]$', prefix):
+        return True
+    words = prefix.split()
+    if words:
+        last_word = words[-1].lower().lstrip("«\"'([")
+        if last_word in _RU_ABBREVS:
+            return True
+    return False
+
+
 def _split_sentences(text: str) -> List[str]:
     """Split text at sentence boundaries."""
-    parts = _SENTENCE_END.split(text)
-    # _SENTENCE_END has 1 capturing group, so split interleaves text and matched punct
     sentences = []
-    i = 0
-    while i < len(parts):
-        chunk = parts[i]
-        if i + 1 < len(parts):
-            chunk += parts[i + 1]  # append the punctuation
-            i += 2
-        else:
-            i += 1
-        if chunk.strip():
-            sentences.append(chunk)
+    start = 0
+    for match in _CANDIDATE_PUNCT.finditer(text):
+        punct = match.group(1)
+        end_idx = match.start() + len(punct)
+        prefix = text[start:match.start()]
+        if punct.startswith('.') and _is_abbrev_or_initial(prefix):
+            continue
+        sent = text[start:end_idx].strip()
+        if sent:
+            sentences.append(sent)
+        start = match.end()
+    remaining = text[start:].strip()
+    if remaining:
+        sentences.append(remaining)
     return sentences
 
 

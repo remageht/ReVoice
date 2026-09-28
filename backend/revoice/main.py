@@ -25,22 +25,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# Always register stub engines at import time
+from .backends import stub_engine  # noqa: F401
+try:
+    from .backends import qwen_engine  # noqa: F401
+except ImportError as e:
+    logger.warning("Qwen engine not available: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Startup / shutdown lifecycle."""
     logger.info("ReVoice server starting up...")
     settings.ensure_dirs()
     await run_migrations()
-
-    # Register stub engines (always available)
-    from .backends import stub_engine  # noqa: F401
-
-    # Try to load real engines (graceful failure if no GPU/models)
-    try:
-        from .backends import qwen_engine  # noqa: F401
-    except ImportError as e:
-        logger.warning("Qwen engine not available: %s", e)
-
     logger.info("ReVoice server ready on http://%s:%d", settings.host, settings.port)
     yield
     logger.info("ReVoice server shutting down.")
@@ -75,12 +73,14 @@ from .routes.models import router as models_router
 from .routes.profiles import router as profiles_router
 from .routes.synthesize import router as synthesize_router
 from .routes.effects import router as effects_router
+from .routes.book import router as book_router
 
 app.include_router(health_router)
 app.include_router(models_router)
 app.include_router(profiles_router)
 app.include_router(synthesize_router)
 app.include_router(effects_router)
+app.include_router(book_router)
 
 
 @app.get("/")

@@ -15,7 +15,7 @@ import uuid
 from pathlib import Path
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -182,11 +182,11 @@ async def update_profile(
     return _to_out(profile)
 
 
-@router.delete("/{profile_id}", status_code=204)
+@router.delete("/{profile_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 async def delete_profile(
     profile_id: str,
     db: AsyncSession = Depends(get_db),
-) -> None:
+) -> Response:
     """Удалить профиль и все его сэмплы."""
     profile = await _get_profile(profile_id, db)
     # Remove voice directory
@@ -196,6 +196,7 @@ async def delete_profile(
     await db.delete(profile)
     await db.commit()
     logger.info("Deleted profile %s", profile_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{profile_id}/samples", response_model=SampleOut, status_code=201)
@@ -254,12 +255,12 @@ async def add_sample(
     )
 
 
-@router.delete("/{profile_id}/samples/{sample_id}", status_code=204)
+@router.delete("/{profile_id}/samples/{sample_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 async def delete_sample(
     profile_id: str,
     sample_id: str,
     db: AsyncSession = Depends(get_db),
-) -> None:
+) -> Response:
     """Удалить сэмпл."""
     stmt = select(VoiceSample).where(
         VoiceSample.id == sample_id,
@@ -277,3 +278,4 @@ async def delete_sample(
 
     await db.delete(sample)
     await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

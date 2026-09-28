@@ -118,9 +118,9 @@ def normalize_audio(audio: np.ndarray, target_db: float = -3.0) -> np.ndarray:
     result = audio * gain
     # Hard clip to prevent clipping above 0.99
     peak = float(np.max(np.abs(result)))
-    if peak > 0.99:
-        result = result * (0.99 / peak)
-    return result
+    if peak > 0.989:
+        result = result * (0.989 / peak)
+    return np.clip(result, -0.989, 0.989)
 
 
 def list_effects() -> List[dict]:

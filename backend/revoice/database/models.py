@@ -37,10 +37,10 @@ class VoiceProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 
     samples: Mapped[List["VoiceSample"]] = relationship(
-        back_populates="profile", cascade="all, delete-orphan"
+        back_populates="profile", cascade="all, delete-orphan", lazy="selectin"
     )
     generations: Mapped[List["Generation"]] = relationship(
-        back_populates="profile", cascade="all, delete-orphan"
+        back_populates="profile", cascade="all, delete-orphan", lazy="selectin"
     )
 
 
