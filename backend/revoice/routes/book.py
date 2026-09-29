@@ -54,7 +54,7 @@ class MarkupResponse(BaseModel):
 class BuildM4BRequest(BaseModel):
     profile_id: str
     chapters: List[dict]  # list of {title: str, text: str}
-    engine: str = "stub"
+    engine: str = "qwen"
     language: str = "ru"
     book_title: str = "Моя книга"
     author: str = "ReVoice"

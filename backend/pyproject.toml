@@ -21,6 +21,7 @@ dependencies = [
     "pedalboard==0.9.17",
     "psutil==7.0.0",
     "sse-starlette==2.2.1",
+    "imageio-ffmpeg>=0.6.0",
 ]
 
 [project.optional-dependencies]

@@ -8,6 +8,7 @@ import { useAppStore } from './store/useAppStore'
 import { Sidebar } from './components/Sidebar'
 import { VoicesTab } from './components/tabs/VoicesTab'
 import { SynthesizeTab } from './components/tabs/SynthesizeTab'
+import { BookTab } from './components/tabs/BookTab'
 import { ModelsTab } from './components/tabs/ModelsTab'
 import { HistoryTab } from './components/tabs/HistoryTab'
 import { SettingsTab } from './components/tabs/SettingsTab'
@@ -44,6 +45,7 @@ export default function App() {
     switch (activeTab) {
       case 'voices': return <VoicesTab />
       case 'synthesize': return <SynthesizeTab />
+      case 'book': return <BookTab />
       case 'models': return <ModelsTab />
       case 'history': return <HistoryTab />
       case 'settings': return <SettingsTab />

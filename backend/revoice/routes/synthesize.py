@@ -29,7 +29,7 @@ router = APIRouter(prefix="/api", tags=["synthesize"])
 class SynthRequest(BaseModel):
     profile_id: str
     text: str = Field(..., min_length=1, max_length=50000)
-    engine: str = Field(default="stub")
+    engine: str = Field(default="qwen")
     model_variant: str = Field(default="default")
     language: str = Field(default="ru")
     seed: Optional[int] = None

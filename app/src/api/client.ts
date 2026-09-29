@@ -147,3 +147,38 @@ export const apiSynth = {
 export const apiHealth = {
   check: () => api.get<HealthInfo>('/api/health').then(r => r.data),
 }
+
+export interface BookChapter {
+  index: number
+  title: string
+  char_count: number
+  preview: string
+}
+
+export interface ParseBookResponse {
+  id: string
+  title: string
+  author: string
+  chapter_count: number
+  chapters: BookChapter[]
+}
+
+export const apiBook = {
+  parse: (text: string, title?: string, author?: string) =>
+    api.post<ParseBookResponse>('/api/book/parse', { text, title, author }).then(r => r.data),
+  markup: (text: string, intensity: 'subtle' | 'moderate' | 'dramatic' = 'moderate') =>
+    api.post<{ original: string; marked_up: string }>('/api/book/markup', { text, intensity }).then(r => r.data),
+  synthesizeBook: (data: {
+    profile_id: string
+    chapters: Array<{ title: string; text: string }>
+    engine?: string
+    language?: string
+    book_title?: string
+    author?: string
+  }) => api.post<{
+    status: string
+    output_path: string
+    total_duration_sec: number
+    chapters_count: number
+  }>('/api/book/synthesize-book', data).then(r => r.data),
+}

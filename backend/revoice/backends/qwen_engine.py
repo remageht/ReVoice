@@ -262,39 +262,57 @@ class QwenTTSEngine:
         wavs = None
         sr = self._sample_rate
 
-        if hasattr(self._model, "generate_voice_clone"):
-            res = self._model.generate_voice_clone(
-                text=text,
-                language=lang_full,
-                ref_audio=(ref_audio, ref_sr),
-                ref_text=ref_text,
-                max_new_tokens=600,
-                synced_gpus=False,
-            )
-            if isinstance(res, tuple):
-                wavs, sr = res
+        try:
+            if hasattr(self._model, "generate_voice_clone"):
+                res = self._model.generate_voice_clone(
+                    text=text,
+                    language=lang_full,
+                    ref_audio=(ref_audio, ref_sr),
+                    ref_text=ref_text,
+                    max_new_tokens=600,
+                    synced_gpus=False,
+                )
+                if isinstance(res, tuple):
+                    wavs, sr = res
+                else:
+                    wavs = res
+            elif hasattr(self._model, "create_voice_clone_prompt"):
+                prompt = self._model.create_voice_clone_prompt(
+                    ref_audio=(ref_audio, ref_sr),
+                    ref_text=ref_text,
+                )
+                res = self._model.generate_voice_clone(
+                    text=text,
+                    language=lang_full,
+                    voice_clone_prompt=prompt,
+                    max_new_tokens=600,
+                    synced_gpus=False,
+                )
+                if isinstance(res, tuple):
+                    wavs, sr = res
+                else:
+                    wavs = res
             else:
-                wavs = res
-        elif hasattr(self._model, "create_voice_clone_prompt"):
-            prompt = self._model.create_voice_clone_prompt(
-                ref_audio=(ref_audio, ref_sr),
-                ref_text=ref_text,
-            )
-            res = self._model.generate_voice_clone(
-                text=text,
-                language=lang_full,
-                voice_clone_prompt=prompt,
-                max_new_tokens=600,
-                synced_gpus=False,
-            )
-            if isinstance(res, tuple):
-                wavs, sr = res
-            else:
-                wavs = res
-        else:
-            raise AttributeError(
-                "Qwen3TTSModel не имеет методов generate_voice_clone или create_voice_clone_prompt"
-            )
+                raise AttributeError(
+                    "Qwen3TTSModel не имеет методов generate_voice_clone или create_voice_clone_prompt"
+                )
+        except torch.cuda.OutOfMemoryError as e:
+            raise RuntimeError(
+                "Нехватка видеопамяти (VRAM OOM) при синтезе Qwen. "
+                "Закройте другие GPU-приложения или переключитесь на модель 0.6B."
+            ) from e
+        except Exception as e:
+            err_str = str(e).lower()
+            if "out of memory" in err_str:
+                raise RuntimeError(
+                    "Нехватка видеопамяти (VRAM OOM) при синтезе Qwen. "
+                    "Закройте другие GPU-приложения или переключитесь на модель 0.6B."
+                ) from e
+            if "meta" in err_str and "device" in err_str:
+                raise RuntimeError(
+                    "Ошибка meta-тензоров при оффлоаде. Перезагрузите модель через экран «Модели»."
+                ) from e
+            raise
 
         # Извлекаем wavs[0]
         if isinstance(wavs, (list, tuple)) and len(wavs) > 0:

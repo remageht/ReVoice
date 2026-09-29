@@ -1,12 +1,13 @@
 import { clsx } from 'clsx'
 import {
-  Mic2, Play, Cpu, History, Settings, Zap
+  Mic2, Play, BookOpen, Cpu, History, Settings, Zap
 } from 'lucide-react'
 import { useAppStore } from '../store/useAppStore'
 
 const TABS = [
   { id: 'voices',     label: 'Голоса',    icon: Mic2 },
   { id: 'synthesize', label: 'Синтез',    icon: Play },
+  { id: 'book',       label: 'Книги',     icon: BookOpen },
   { id: 'models',     label: 'Модели',    icon: Cpu },
   { id: 'history',    label: 'История',   icon: History },
   { id: 'settings',  label: 'Настройки', icon: Settings },

@@ -33,7 +33,7 @@ export const useAppStore = create<AppStore>((set) => ({
   activeProfileId: null,
   setActiveProfileId: (id) => set({ activeProfileId: id }),
 
-  activeEngine: 'stub',
+  activeEngine: 'qwen',
   setActiveEngine: (engine) => set({ activeEngine: engine }),
 
   activeVariant: 'default',

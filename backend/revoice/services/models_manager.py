@@ -43,18 +43,6 @@ class ModelDefinition:
 
 # Каталог поддерживаемых моделей
 MODEL_CATALOGUE: Dict[str, ModelDefinition] = {
-    "stub": ModelDefinition(
-        id="stub",
-        name="Stub TTS (Тестовый генератор)",
-        type="TTS",
-        engine_id="stub",
-        variant="default",
-        hf_repo_id="",
-        size_mb=0,
-        license="MIT",
-        description="Встроенный тестовый генератор (не требует скачивания весов).",
-        required_files=[],
-    ),
     "qwen-tts-0.6b": ModelDefinition(
         id="qwen-tts-0.6b",
         name="Qwen3-TTS 0.6B (Базовая, быстрая)",

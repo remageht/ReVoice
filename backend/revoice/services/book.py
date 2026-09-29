@@ -117,8 +117,14 @@ def assemble_m4b(
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # Check if ffmpeg is on system
+    # Check if ffmpeg is on system, with imageio_ffmpeg fallback
     ffmpeg_exe = shutil.which("ffmpeg")
+    if not ffmpeg_exe:
+        try:
+            import imageio_ffmpeg
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            ffmpeg_exe = None
     
     # Calculate chapter timings
     valid_chapters = [c for c in chapters if c.audio_path and Path(c.audio_path).exists()]

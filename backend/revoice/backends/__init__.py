@@ -122,5 +122,5 @@ def get_stt(engine_id: str = "faster-whisper") -> "STTEngine":
     return _STT_REGISTRY[engine_id]
 
 
-def list_tts_engines() -> List[EngineInfo]:
-    return [e.info for e in _TTS_REGISTRY.values()]
+def list_tts_engines(include_stubs: bool = False) -> List[EngineInfo]:
+    return [e.info for e in _TTS_REGISTRY.values() if include_stubs or e.engine_id != "stub"]

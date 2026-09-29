@@ -30,9 +30,9 @@ async def test_models_list():
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
-        # Stub engine always present
+        # Real engine present
         ids = [m["engine_id"] for m in data]
-        assert "stub" in ids
+        assert "qwen" in ids
 
 
 @pytest.mark.asyncio

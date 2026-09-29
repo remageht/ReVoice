@@ -207,7 +207,7 @@ export function ModelsTab() {
 
                     {/* Size */}
                     <td className="py-4 px-4 text-white/70 font-mono text-xs">
-                      {m.size_mb > 0 ? `${m.size_mb} МБ` : '0 МБ (stub)'}
+                      {m.size_mb} МБ
                     </td>
 
                     {/* Disk Status */}
