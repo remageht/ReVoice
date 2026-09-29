@@ -67,9 +67,6 @@
     "updater": {
       "pubkey": "",
       "endpoints": []
-    },
-    "autostart": {
-      "enabled": false
     }
   }
 }

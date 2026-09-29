@@ -149,9 +149,9 @@ pub async fn run_bootstrap(handle: &AppHandle, data_dir: PathBuf) -> Result<()> 
             std::fs::create_dir_all(&backend_dest)?;
             extract_zip(&backend_zip, &backend_dest)
                 .context("Ошибка распаковки backend.zip")?;
-            tracing::info!("Backend extracted to: {:?}", backend_dest);
+            log::info!("Backend extracted to: {:?}", backend_dest);
         } else {
-            tracing::warn!("backend.zip not found at {:?} — будет попытка работы без него", backend_zip);
+            log::warn!("backend.zip not found at {:?} — будет попытка работы без него", backend_zip);
         }
     } else {
         emit_progress(handle, "backend_ok", 60, "Бэкенд уже распакован");
@@ -252,13 +252,13 @@ pub async fn run_bootstrap(handle: &AppHandle, data_dir: PathBuf) -> Result<()> 
         .output()
         .context("Не удалось запустить проверку ML-стека")?;
     let txt = String::from_utf8_lossy(&out.stdout).to_string();
-    tracing::info!("ML check: {}", txt.trim());
+    log::info!("ML check: {}", txt.trim());
     if !(txt.contains("2.14.0+cu126") && txt.contains("True")) {
         anyhow::bail!("ML-стек не готов: {}", txt.trim());
     }
 
     emit_progress(handle, "done", 100, "Окружение готово!");
-    tracing::info!("Bootstrap complete. Runtime at: {:?}", runtime_dir);
+    log::info!("Bootstrap complete. Runtime at: {:?}", runtime_dir);
     Ok(())
 }
 
@@ -323,7 +323,9 @@ mutagen>=1.47.0
     Ok(())
 }
 
-/// Download file with progress events.
+/// Download file with progress events + RESUME.
+/// Если файл уже частично скачан (обрыв), продолжает Range-запросом с конца,
+/// а не начинает заново. Критично для гигабайтных колёс на медленном CDN.
 async fn download_with_progress(
     handle: &AppHandle,
     url: &str,
@@ -334,25 +336,56 @@ async fn download_with_progress(
 ) -> Result<()> {
     use tokio::io::AsyncWriteExt;
 
-    tracing::info!("Downloading {} → {:?}", url, dest);
+    log::info!("Downloading {} → {:?}", url, dest);
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(300))
         .user_agent("ReVoice/0.1.0")
         .build()?;
 
-    let resp = client
-        .get(url)
+    // HEAD: узнаём полный размер для resume-проверки
+    let total: u64 = client
+        .head(url)
         .send()
         .await
-        .context("HTTP request failed")?;
+        .ok()
+        .and_then(|r| r.content_length())
+        .unwrap_or(0);
 
-    let total = resp.content_length().unwrap_or(0);
-    let mut downloaded: u64 = 0;
+    let have: u64 = std::fs::metadata(dest).map(|m| m.len()).unwrap_or(0);
+    if total > 0 && have >= total && have > 0 {
+        log::info!("{} уже скачан целиком ({} МБ), пропускаем", label, have / 1_048_576);
+        return Ok(());
+    }
+    if have > 0 {
+        log::info!("{}: резюм с {} МБ", label, have / 1_048_576);
+    }
 
-    let mut file = tokio::fs::File::create(dest)
-        .await
-        .context("Cannot create destination file")?;
+    let mut req = client.get(url);
+    if have > 0 {
+        req = req.header("Range", format!("bytes={}-", have));
+    }
+    let resp = req.send().await.context("HTTP request failed")?;
+    // Сервер может проигнорировать Range (200 вместо 206) — тогда качаем заново
+    let resumed = resp.status() == reqwest::StatusCode::PARTIAL_CONTENT;
+    if !resumed && have > 0 {
+        log::warn!("{}: сервер не поддержал resume, качаем заново", label);
+    }
+
+    let total = if total > 0 { total } else { resp.content_length().unwrap_or(0) };
+    let mut downloaded: u64 = if resumed { have } else { 0 };
+
+    let mut file = if resumed {
+        tokio::fs::OpenOptions::new()
+            .append(true)
+            .open(dest)
+            .await
+            .context("Cannot open destination file for append")?
+    } else {
+        tokio::fs::File::create(dest)
+            .await
+            .context("Cannot create destination file")?
+    };
 
     let mut stream = resp.bytes_stream();
     use futures_util::StreamExt;
@@ -381,6 +414,14 @@ async fn download_with_progress(
     }
 
     file.flush().await?;
+    // Финальная проверка размера
+    let final_size = std::fs::metadata(dest).map(|m| m.len()).unwrap_or(0);
+    if total > 0 && final_size != total {
+        anyhow::bail!(
+            "{}: размер не сошёлся (есть {} из {}), будет повтор при следующем запуске",
+            label, final_size, total
+        );
+    }
     Ok(())
 }
 
@@ -440,10 +481,10 @@ fn fix_pth_file(python_dir: &Path) -> Result<()> {
             // Uncomment import site line
             let fixed = content.replace("#import site", "import site");
             std::fs::write(&path, fixed)?;
-            tracing::info!("Fixed ._pth file: {:?}", path);
+            log::info!("Fixed ._pth file: {:?}", path);
             return Ok(());
         }
     }
-    tracing::warn!("._pth file not found in {:?}", python_dir);
+    log::warn!("._pth file not found in {:?}", python_dir);
     Ok(())
 }

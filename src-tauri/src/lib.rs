@@ -16,13 +16,10 @@ pub struct AppState {
 }
 
 pub fn run() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("revoice=debug".parse().unwrap()),
-        )
-        .init();
-
+    // Логирование — только через tauri_plugin_log (ниже).
+    // Свой tracing_subscriber::init() здесь ЗАПРЕЩЁН: двойная инициализация
+    // глобального логгера = паника "attempted to set a logger...".
+    // Все вызовы — только log::info!/warn!/error!/debug! (уходят в файл revoice.log).
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
@@ -57,7 +54,7 @@ pub fn run() {
             let handle_clone = handle.clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = sidecar::start_sidecar(&handle_clone).await {
-                    tracing::error!("Failed to start sidecar: {}", e);
+                    log::error!("Failed to start sidecar: {}", e);
                 }
             });
 

@@ -12,7 +12,7 @@ pub fn register_hotkeys(handle: &AppHandle) -> Result<()> {
 
     handle.global_shortcut().on_shortcut(shortcut, |app, _shortcut, event| {
         if event.state == ShortcutState::Pressed {
-            tracing::info!("Global hotkey triggered: {}", SYNTH_HOTKEY);
+            log::info!("Global hotkey triggered: {}", SYNTH_HOTKEY);
             let app_handle = app.clone();
             tauri::async_runtime::spawn(async move {
                 handle_synth_hotkey(&app_handle).await;
@@ -20,7 +20,7 @@ pub fn register_hotkeys(handle: &AppHandle) -> Result<()> {
         }
     })?;
 
-    tracing::info!("Global hotkey registered: {}", SYNTH_HOTKEY);
+    log::info!("Global hotkey registered: {}", SYNTH_HOTKEY);
     Ok(())
 }
 
@@ -30,12 +30,12 @@ async fn handle_synth_hotkey(app: &AppHandle) {
     let text = match app.clipboard().read_text() {
         Ok(t) if !t.trim().is_empty() => t,
         _ => {
-            tracing::warn!("Clipboard empty or not text, skipping synthesis");
+            log::warn!("Clipboard empty or not text, skipping synthesis");
             return;
         }
     };
 
-    tracing::info!("Hotkey: synthesizing {} chars from clipboard", text.len());
+    log::info!("Hotkey: synthesizing {} chars from clipboard", text.len());
 
     // Emit to frontend to trigger synthesis
     app.emit("hotkey-synth", serde_json::json!({

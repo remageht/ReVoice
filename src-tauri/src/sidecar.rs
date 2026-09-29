@@ -23,13 +23,13 @@ impl SidecarState {
 }
 
 pub async fn start_sidecar(handle: &AppHandle) -> Result<()> {
-    tracing::info!("Запуск ReVoice Python бэкенда...");
+    log::info!("Запуск ReVoice Python бэкенда...");
 
     let data_dir = get_data_dir();
     let is_dev = is_dev_mode();
 
     if is_dev {
-        tracing::warn!(
+        log::warn!(
             "Dev-режим: ожидаем бэкенд на порту {}. Запустите: cd backend && uv run uvicorn revoice.main:app --port {}",
             BACKEND_PORT,
             BACKEND_PORT
@@ -49,7 +49,7 @@ pub async fn start_sidecar(handle: &AppHandle) -> Result<()> {
     // Production mode
     // 1. Bootstrap if needed
     if !crate::bootstrap::is_bootstrapped(&data_dir) {
-        tracing::info!("Первый запуск — инициализация окружения...");
+        log::info!("Первый запуск — инициализация окружения...");
         handle.emit("bootstrap-start", serde_json::json!({
             "message": "Первый запуск: подготавливаем окружение..."
         })).ok();
@@ -68,7 +68,10 @@ pub async fn start_sidecar(handle: &AppHandle) -> Result<()> {
         );
     }
 
-    // Backend source: after bootstrap, revoice/ was extracted from backend.zip into runtime/revoice/
+    // Backend source: after bootstrap, revoice/ was extracted from backend.zip into runtime/revoice/.
+    // ВАЖНО: backend импортирует себя относительными импортами (from .config ...),
+    // поэтому cwd обязан быть runtime/ (родитель пакета), а модуль — revoice.main.
+    // cwd=runtime/revoice + revoice.main НЕ работает (ModuleNotFoundError).
     let backend_dir = data_dir.join("runtime").join("revoice");
 
     if !backend_dir.join("main.py").exists() {
@@ -78,7 +81,7 @@ pub async fn start_sidecar(handle: &AppHandle) -> Result<()> {
         );
     }
 
-    tracing::info!("Запускаем uvicorn: python={:?} cwd={:?}", python_exe, backend_dir);
+    log::info!("Запускаем uvicorn: python={:?} cwd={:?}", python_exe, backend_dir);
 
     let child = std::process::Command::new(&python_exe)
         .args([
@@ -88,14 +91,14 @@ pub async fn start_sidecar(handle: &AppHandle) -> Result<()> {
             "--port", &BACKEND_PORT.to_string(),
             "--log-level", "warning",
         ])
-        .current_dir(&backend_dir)
+        .current_dir(data_dir.join("runtime"))
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
         .context("Не удалось запустить Python-бэкенд")?;
 
     let pid = child.id();
-    tracing::info!("Бэкенд запущен (PID {}), ожидаем готовности...", pid);
+    log::info!("Бэкенд запущен (PID {}), ожидаем готовности...", pid);
 
     // Update state
     if let Some(state) = handle.try_state::<crate::AppState>() {
@@ -108,13 +111,13 @@ pub async fn start_sidecar(handle: &AppHandle) -> Result<()> {
     // Wait for backend to be ready (up to 90 seconds — uvicorn cold start)
     match wait_for_backend(BACKEND_PORT, 90).await {
         Ok(()) => {
-            tracing::info!("Бэкенд готов на порту {}", BACKEND_PORT);
+            log::info!("Бэкенд готов на порту {}", BACKEND_PORT);
             handle.emit("sidecar-ready", serde_json::json!({
                 "url": format!("http://127.0.0.1:{}", BACKEND_PORT)
             })).ok();
         }
         Err(e) => {
-            tracing::error!("Бэкенд не запустился за 90 сек: {}", e);
+            log::error!("Бэкенд не запустился за 90 сек: {}", e);
             handle.emit("sidecar-error", serde_json::json!({
                 "message": format!("Бэкенд не запустился: {}", e)
             })).ok();
