@@ -7,7 +7,7 @@
     "frontendDist": "../app/dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm.cmd run dev --prefix ../app",
-    "beforeBuildCommand": "powershell -ExecutionPolicy Bypass -Command \"if (Test-Path ./build-backend-zip.ps1) { ./build-backend-zip.ps1 } else { ./src-tauri/build-backend-zip.ps1 }\""
+    "beforeBuildCommand": "powershell -ExecutionPolicy Bypass -Command \"$s = if (Test-Path './build-backend-zip.ps1') { './build-backend-zip.ps1' } else { './src-tauri/build-backend-zip.ps1' }; & $s\""
   },
   "app": {
     "windows": [
