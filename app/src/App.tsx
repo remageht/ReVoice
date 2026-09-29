@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
 import { listen } from '@tauri-apps/api/event'
@@ -15,7 +15,8 @@ import { SettingsTab } from './components/tabs/SettingsTab'
 import { BackendStatus } from './components/BackendStatus'
 
 export default function App() {
-  const { activeTab, setBackendReady, backendReady, setActiveProfileId } = useAppStore()
+  const { activeTab, setBackendReady, backendReady } = useAppStore()
+  const [sidecarError, setSidecarError] = useState<string | null>(null)
 
   // Poll backend health
   const { data: health, isSuccess } = useQuery({
@@ -27,19 +28,25 @@ export default function App() {
 
   useEffect(() => {
     setBackendReady(isSuccess && health?.status === 'ok')
+    if (isSuccess && health?.status === 'ok') {
+      setSidecarError(null)
+    }
   }, [isSuccess, health, setBackendReady])
 
   // Listen for Tauri sidecar events
   useEffect(() => {
-    const unlisten1 = listen('sidecar-ready', () => setBackendReady(true))
-    const unlisten2 = listen('sidecar-error', (e: any) => {
-      console.error('Sidecar error:', e.payload)
+    const unlisten1 = listen('sidecar-ready', () => {
+      setBackendReady(true)
+      setSidecarError(null)
+    })
+    const unlisten2 = listen<{ message: string }>('sidecar-error', (e) => {
+      setSidecarError(e.payload.message)
     })
     return () => {
       unlisten1.then(f => f())
       unlisten2.then(f => f())
     }
-  }, [])
+  }, [setBackendReady])
 
   const renderTab = () => {
     switch (activeTab) {
@@ -59,7 +66,7 @@ export default function App() {
       <main className="flex-1 overflow-hidden relative">
         {!backendReady && (
           <div className="absolute inset-0 bg-surface/80 backdrop-blur-sm z-50 flex items-center justify-center">
-            <BackendStatus />
+            <BackendStatus error={sidecarError} />
           </div>
         )}
         <div className="h-full overflow-y-auto">

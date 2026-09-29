@@ -5,6 +5,7 @@ mod sidecar;
 mod tray;
 mod commands;
 mod hotkey;
+mod bootstrap;
 
 use sidecar::SidecarState;
 

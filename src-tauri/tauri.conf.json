@@ -7,7 +7,7 @@
     "frontendDist": "../app/dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm.cmd run dev --prefix ../app",
-    "beforeBuildCommand": "npm.cmd run build --prefix ../app"
+    "beforeBuildCommand": "powershell -ExecutionPolicy Bypass -Command \"if (Test-Path ./build-backend-zip.ps1) { ./build-backend-zip.ps1 } else { ./src-tauri/build-backend-zip.ps1 }\""
   },
   "app": {
     "windows": [
@@ -57,7 +57,7 @@
       }
     },
     "resources": {
-      "revoice-server/**/*": "revoice-server"
+      "backend.zip": "."
     }
   },
   "plugins": {

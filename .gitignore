@@ -70,3 +70,6 @@ logs/
 # Tauri
 app/dist/
 app/.tauri/
+
+# Generated backend copy for bundling
+src-tauri/backend/
