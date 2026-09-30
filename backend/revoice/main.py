@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title="ReVoice API",
     description="Локальная студия клонирования голоса",
-    version="0.1.0",
+    version="0.1.2",
     docs_url="/docs",
     redoc_url=None,
     lifespan=lifespan,
@@ -90,4 +90,4 @@ app.include_router(book_router)
 
 @app.get("/")
 async def root() -> dict:
-    return {"app": "ReVoice", "version": "0.1.0", "docs": "/docs"}
+    return {"app": "ReVoice", "version": "0.1.2", "docs": "/docs"}
