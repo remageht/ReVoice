@@ -134,10 +134,22 @@ pub async fn run_bootstrap(handle: &AppHandle, data_dir: PathBuf) -> Result<()> 
     }
 
     // --- Step 4: Extract backend source from bundled zip ---
-    emit_progress(handle, "backend_copy", 60, "Распаковываем бэкенд...");
-
+    // ВАЖНО: исходники обновляются при смене версии приложения, иначе
+    // пользователи навсегда остаются на первом распакованном бэкенде.
+    // Маркер: runtime/revoice/.src_version == CARGO_PKG_VERSION.
     let backend_dest = runtime_dir.join("revoice");
-    if !backend_dest.exists() {
+    let marker = backend_dest.join(".src_version");
+    let marker_ok = std::fs::read_to_string(&marker)
+        .map(|v| v.trim() == env!("CARGO_PKG_VERSION"))
+        .unwrap_or(false);
+    if !marker_ok {
+        if backend_dest.exists() {
+            emit_progress(handle, "backend_update", 60, "Обновляем бэкенд под новую версию...");
+            log::info!("backend marker mismatch, re-extracting");
+            std::fs::remove_dir_all(&backend_dest).ok();
+        } else {
+            emit_progress(handle, "backend_copy", 60, "Распаковываем бэкенд...");
+        }
         // backend.zip is bundled with the app in resource_dir
         let resource_dir = handle
             .path()
@@ -149,6 +161,7 @@ pub async fn run_bootstrap(handle: &AppHandle, data_dir: PathBuf) -> Result<()> 
             std::fs::create_dir_all(&backend_dest)?;
             extract_zip(&backend_zip, &backend_dest)
                 .context("Ошибка распаковки backend.zip")?;
+            std::fs::write(&marker, env!("CARGO_PKG_VERSION")).ok();
             log::info!("Backend extracted to: {:?}", backend_dest);
         } else {
             log::warn!("backend.zip not found at {:?} — будет попытка работы без него", backend_zip);
