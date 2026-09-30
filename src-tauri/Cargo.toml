@@ -1,6 +1,6 @@
 [package]
 name = "revoice"
-version = "0.1.2"
+version = "0.1.3"
 description = "ReVoice — студия клонирования голоса"
 authors = ["ReVoice Contributors"]
 edition = "2021"
