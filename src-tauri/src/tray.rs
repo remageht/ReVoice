@@ -15,7 +15,12 @@ pub fn setup_tray(app: &mut App) -> Result<()> {
 
     let menu = Menu::with_items(app, &[&show, &hide, &sep, &quit])?;
 
+    // Иконка вшита в бинарник (include_bytes), а не ищется в assets:
+    // иначе "Asset icon.png not found" и пустой трей.
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))
+        .expect("tray icon.png должен существовать в src-tauri/icons/");
     let _tray = TrayIconBuilder::new()
+        .icon(icon)
         .menu(&menu)
         .show_menu_on_left_click(false)
         .tooltip("ReVoice — студия голоса")
