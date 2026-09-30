@@ -21,6 +21,14 @@ pub fn run() {
     // глобального логгера = паника "attempted to set a logger...".
     // Все вызовы — только log::info!/warn!/error!/debug! (уходят в файл revoice.log).
     tauri::Builder::default()
+        // Один инстанс навсегда: повторный запуск фокусирует существующее окно,
+        // а не плодит GUI/бэкенды с дракой за порт 7851 и SQLite (причина «вечных спиннеров»).
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                window.show().ok();
+                window.set_focus().ok();
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
