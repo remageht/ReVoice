@@ -59,6 +59,17 @@ pub async fn start_sidecar(handle: &AppHandle) -> Result<()> {
             .context("Ошибка инициализации окружения Python")?;
     }
 
+    // 1b. Adopt: если бэкенд уже отвечает (вторая копия приложения,
+    // ручной запуск, прошлый sidecar) — не плодим дубликат на том же порту,
+    // иначе вечная борьба за порт и бесконечный спиннер.
+    if wait_for_backend(BACKEND_PORT, 5).await.is_ok() {
+        log::info!("Бэкенд уже запущен на порту {} — подключаемся", BACKEND_PORT);
+        handle.emit("sidecar-ready", serde_json::json!({
+            "url": format!("http://127.0.0.1:{}", BACKEND_PORT)
+        })).ok();
+        return Ok(());
+    }
+
     // 2. Start uvicorn via venv python
     let python_exe = crate::bootstrap::venv_python_exe(&data_dir);
     if !python_exe.exists() {
@@ -83,6 +94,15 @@ pub async fn start_sidecar(handle: &AppHandle) -> Result<()> {
 
     log::info!("Запускаем uvicorn: python={:?} cwd={:?}", python_exe, backend_dir);
 
+    // Логи бэкенда — в файл (раньше уходили в null и диагностика была невозможна).
+    let log_dir = data_dir.join("logs");
+    std::fs::create_dir_all(&log_dir).ok();
+    let log_path = log_dir.join("backend.log");
+    let out_file = std::fs::OpenOptions::new()
+        .create(true).append(true).open(&log_path)
+        .context("Не удалось открыть файл лога бэкенда")?;
+    let err_file = out_file.try_clone().context("clone log handle")?;
+
     let child = std::process::Command::new(&python_exe)
         .args([
             "-m", "uvicorn",
@@ -92,8 +112,8 @@ pub async fn start_sidecar(handle: &AppHandle) -> Result<()> {
             "--log-level", "warning",
         ])
         .current_dir(data_dir.join("runtime"))
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        .stdout(out_file)
+        .stderr(err_file)
         .spawn()
         .context("Не удалось запустить Python-бэкенд")?;
 
@@ -108,8 +128,9 @@ pub async fn start_sidecar(handle: &AppHandle) -> Result<()> {
         }
     }
 
-    // Wait for backend to be ready (up to 90 seconds — uvicorn cold start)
-    match wait_for_backend(BACKEND_PORT, 90).await {
+    // Wait for backend to be ready (до 180 сек: холодный старт torch на HDD долгий).
+    // После таймаута — ЧЕСТНАЯ ошибка с путём к логу, а не вечный спиннер.
+    match wait_for_backend(BACKEND_PORT, 180).await {
         Ok(()) => {
             log::info!("Бэкенд готов на порту {}", BACKEND_PORT);
             handle.emit("sidecar-ready", serde_json::json!({
@@ -117,9 +138,11 @@ pub async fn start_sidecar(handle: &AppHandle) -> Result<()> {
             })).ok();
         }
         Err(e) => {
-            log::error!("Бэкенд не запустился за 90 сек: {}", e);
+            let log_path = data_dir.join("logs").join("backend.log");
+            log::error!("Бэкенд не запустился за 180 сек: {}", e);
             handle.emit("sidecar-error", serde_json::json!({
-                "message": format!("Бэкенд не запустился: {}", e)
+                "message": format!("Бэкенд не запустился за 3 мин ({}). Лог: {}. Проверьте свободен ли порт {}, закройте дубли приложения и перезапустите.",
+                    e, log_path.display(), BACKEND_PORT)
             })).ok();
         }
     }
