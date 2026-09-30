@@ -197,11 +197,19 @@ pub async fn run_bootstrap(handle: &AppHandle, data_dir: PathBuf) -> Result<()> 
         anyhow::bail!("Установка зависимостей завершилась с ошибкой: {:?}", status.code());
     }
 
-    // --- Step 5b: torch CUDA wheel (отдельно!) ---
+    // --- Step 5b: torch (CUDA wheel или CPU) ---
     // PyPI отдаёт CPU-torch, а faster-whisper тянет его зависимостью.
-    // CUDA-колесо ставится поверх с заменой. Без него Qwen на GPU не взлетит.
-    emit_progress(handle, "torch_check", 86, "Проверяем torch CUDA...");
-    if !torch_cu126_ok(&data_dir) {
+    // NVIDIA есть → CUDA-колесо поверх с заменой (Qwen на GPU).
+    // NVIDIA нет (AMD/Intel) → остаётся CPU-torch с PyPI, всё работает на CPU (медленно).
+    // REVOICE_FORCE_CPU=1 принудительно включает CPU-режим (для тестов).
+    let use_cuda = has_nvidia_gpu();
+    if use_cuda {
+        emit_progress(handle, "torch_check", 86, "Проверяем torch CUDA...");
+    } else {
+        emit_progress(handle, "torch_cpu", 86, "NVIDIA не найден — режим CPU (без CUDA-колеса)...");
+        log::info!("No NVIDIA GPU (or REVOICE_FORCE_CPU=1): CPU torch will be used");
+    }
+    if use_cuda && !torch_cu126_ok(&data_dir) {
         emit_progress(handle, "torch_download", 86, "Качаем torch CUDA (~2.6 ГБ, долго)...");
         let wheel_path = runtime_dir.join(TORCH_WHEEL_NAME);
         download_with_progress(handle, TORCH_WHEEL_URL, &wheel_path, 86, 94, "Качаем torch CUDA")
@@ -246,6 +254,8 @@ pub async fn run_bootstrap(handle: &AppHandle, data_dir: PathBuf) -> Result<()> 
     }
 
     // --- Step 5d: финальная проверка ML-стека ---
+    // GPU-машина: строгая проверка (cu126 + cuda True).
+    // CPU-машина (AMD/Intel): достаточно импорта torch + qwen_tts (любой сборки).
     emit_progress(handle, "ml_check", 97, "Проверяем ML-стек...");
     let out = std::process::Command::new(venv_python_exe(&data_dir))
         .args(["-c", "import torch, qwen_tts, transformers; print(torch.__version__, torch.cuda.is_available(), transformers.__version__)"])
@@ -253,7 +263,12 @@ pub async fn run_bootstrap(handle: &AppHandle, data_dir: PathBuf) -> Result<()> 
         .context("Не удалось запустить проверку ML-стека")?;
     let txt = String::from_utf8_lossy(&out.stdout).to_string();
     log::info!("ML check: {}", txt.trim());
-    if !(txt.contains("2.14.0+cu126") && txt.contains("True")) {
+    let ml_ok = if use_cuda {
+        txt.contains("2.14.0+cu126") && txt.contains("True")
+    } else {
+        out.status.success() && py_import_ok(&data_dir, "qwen_tts")
+    };
+    if !ml_ok {
         anyhow::bail!("ML-стек не готов: {}", txt.trim());
     }
 
@@ -273,6 +288,19 @@ fn torch_cu126_ok(data_dir: &Path) -> bool {
         }
         _ => false,
     }
+}
+
+/// Есть ли NVIDIA GPU (nvidia-smi отвечает).
+/// REVOICE_FORCE_CPU=1 принудительно возвращает false (тест CPU-режима).
+fn has_nvidia_gpu() -> bool {
+    if std::env::var("REVOICE_FORCE_CPU").is_ok() {
+        return false;
+    }
+    std::process::Command::new("nvidia-smi")
+        .arg("-L")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 /// Проверка импорта модуля в venv (для опциональных пакетов).
