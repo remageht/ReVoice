@@ -64,7 +64,7 @@ async def health() -> HealthResponse:
     loaded = [eid for eid, e in _TTS_REGISTRY.items() if e.is_loaded()]
     return HealthResponse(
         status="ok",
-        version="0.1.3",
+        version="0.1.4",
         uptime_sec=round(uptime, 1),
         platform=platform.platform(),
         python_version=sys.version.split()[0],

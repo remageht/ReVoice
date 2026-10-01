@@ -10,9 +10,10 @@ interface BootstrapProgress {
 
 interface BackendStatusProps {
   error?: string | null
+  diag?: string | null
 }
 
-export function BackendStatus({ error }: BackendStatusProps) {
+export function BackendStatus({ error, diag }: BackendStatusProps) {
   const [progress, setProgress] = useState<BootstrapProgress | null>(null)
   const [isBootstrapping, setIsBootstrapping] = useState(false)
 
@@ -80,13 +81,16 @@ export function BackendStatus({ error }: BackendStatusProps) {
     )
   }
 
-  // Default: just loading spinner
+  // Default: just loading spinner + live diagnostics line
   return (
     <div className="text-center space-y-4">
       <Loader2 className="w-10 h-10 text-brand-400 animate-spin mx-auto" />
       <div>
         <p className="text-white font-semibold text-lg">Запускаем бэкенд...</p>
         <p className="text-white/50 text-sm mt-1">Python-сервер стартует, подождите</p>
+        {diag && (
+          <p className="text-white/40 text-xs mt-3 font-mono break-all">{diag}</p>
+        )}
       </div>
     </div>
   )

@@ -17,14 +17,30 @@ import { BackendStatus } from './components/BackendStatus'
 export default function App() {
   const { activeTab, setBackendReady, backendReady } = useAppStore()
   const [sidecarError, setSidecarError] = useState<string | null>(null)
+  // Видимая диагностика health-опроса (иначе вечный спиннер без причины).
+  const [healthNote, setHealthNote] = useState<string>('опрос не запускался')
+  const [healthFails, setHealthFails] = useState<number>(0)
 
   // Poll backend health
-  const { data: health, isSuccess } = useQuery({
+  const { data: health, isSuccess, isError, error, dataUpdatedAt } = useQuery({
     queryKey: ['health'],
     queryFn: apiHealth.check,
     refetchInterval: 5000,
     retry: false,
   })
+
+  useEffect(() => {
+    const t = new Date().toLocaleTimeString('ru-RU')
+    if (isSuccess && health?.status === 'ok') {
+      setHealthNote(`ок ${t}`)
+    } else if (isError) {
+      const msg = error instanceof Error ? error.message : String(error)
+      setHealthFails((n) => n + 1)
+      setHealthNote(`ошибка ${t}: ${msg}`)
+    } else {
+      setHealthNote(`ожидание... ${t}`)
+    }
+  }, [isSuccess, isError, error, health, dataUpdatedAt])
 
   useEffect(() => {
     setBackendReady(isSuccess && health?.status === 'ok')
@@ -66,7 +82,7 @@ export default function App() {
       <main className="flex-1 overflow-hidden relative">
         {!backendReady && (
           <div className="absolute inset-0 bg-surface/80 backdrop-blur-sm z-50 flex items-center justify-center">
-            <BackendStatus error={sidecarError} />
+            <BackendStatus error={sidecarError} diag={`${healthNote} (фейлов: ${healthFails})`} />
           </div>
         )}
         <div className="h-full overflow-y-auto">
