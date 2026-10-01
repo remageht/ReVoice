@@ -117,6 +117,10 @@ pub async fn start_sidecar(handle: &AppHandle) -> Result<()> {
             "--port", &BACKEND_PORT.to_string(),
             "--log-level", "warning",
         ])
+        // PYTHONUTF8=1: иначе логирование кириллицы/стрелок (→) падает
+        // с UnicodeEncodeError cp1251 и роняет запросы (создание профиля!).
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8")
         .current_dir(data_dir.join("runtime"))
         .stdout(out_file)
         .stderr(err_file)
