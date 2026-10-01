@@ -73,3 +73,6 @@ app/.tauri/
 
 # Generated backend copy for bundling
 src-tauri/backend/
+src-tauri/backend.zip
+dataset/
+

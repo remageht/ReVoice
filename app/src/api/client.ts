@@ -145,7 +145,7 @@ export const apiSynth = {
 }
 
 export const apiHealth = {
-  check: () => api.get<HealthInfo>('/api/health').then(r => r.data),
+  check: () => api.get<HealthInfo>('/api/health', { timeout: 3000 }).then(r => r.data),
 }
 
 export interface BookChapter {

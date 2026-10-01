@@ -16,6 +16,14 @@ interface BackendStatusProps {
 export function BackendStatus({ error, diag }: BackendStatusProps) {
   const [progress, setProgress] = useState<BootstrapProgress | null>(null)
   const [isBootstrapping, setIsBootstrapping] = useState(false)
+  const [spinnerSeconds, setSpinnerSeconds] = useState(0)
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setSpinnerSeconds((s) => s + 1)
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     const unlisten1 = listen<BootstrapProgress>('bootstrap-progress', (e) => {
@@ -87,9 +95,13 @@ export function BackendStatus({ error, diag }: BackendStatusProps) {
       <Loader2 className="w-10 h-10 text-brand-400 animate-spin mx-auto" />
       <div>
         <p className="text-white font-semibold text-lg">Запускаем бэкенд...</p>
-        <p className="text-white/50 text-sm mt-1">Python-сервер стартует, подождите</p>
-        {diag && (
-          <p className="text-white/40 text-xs mt-3 font-mono break-all">{diag}</p>
+        <p className="text-white/50 text-sm mt-1">
+          Python-сервер стартует, подождите{spinnerSeconds >= 5 ? ` (${spinnerSeconds}с)` : ''}
+        </p>
+        {(spinnerSeconds >= 15 || diag?.startsWith('ошибка')) && (
+          <p className="text-white/40 text-xs mt-3 font-mono break-all">
+            {diag || `ожидание отклика ${spinnerSeconds}с...`}
+          </p>
         )}
       </div>
     </div>

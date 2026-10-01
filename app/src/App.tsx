@@ -21,33 +21,35 @@ export default function App() {
   const [healthNote, setHealthNote] = useState<string>('опрос не запускался')
   const [healthFails, setHealthFails] = useState<number>(0)
 
-  // Poll backend health
+  // Poll backend health: poll faster (1500ms) until backend is ready, then every 5000ms
   const { data: health, isSuccess, isError, error, dataUpdatedAt } = useQuery({
     queryKey: ['health'],
     queryFn: apiHealth.check,
-    refetchInterval: 5000,
+    refetchInterval: backendReady ? 5000 : 1500,
     retry: false,
   })
 
   useEffect(() => {
     const t = new Date().toLocaleTimeString('ru-RU')
     if (isSuccess && health?.status === 'ok') {
+      setHealthFails(0)
       setHealthNote(`ок ${t}`)
+      setBackendReady(true)
+      setSidecarError(null)
     } else if (isError) {
       const msg = error instanceof Error ? error.message : String(error)
-      setHealthFails((n) => n + 1)
+      setHealthFails((n) => {
+        const next = n + 1
+        if (next >= 5 && backendReady) {
+          setBackendReady(false)
+        }
+        return next
+      })
       setHealthNote(`ошибка ${t}: ${msg}`)
     } else {
       setHealthNote(`ожидание... ${t}`)
     }
-  }, [isSuccess, isError, error, health, dataUpdatedAt])
-
-  useEffect(() => {
-    setBackendReady(isSuccess && health?.status === 'ok')
-    if (isSuccess && health?.status === 'ok') {
-      setSidecarError(null)
-    }
-  }, [isSuccess, health, setBackendReady])
+  }, [isSuccess, isError, error, health, dataUpdatedAt, backendReady, setBackendReady])
 
   // Listen for Tauri sidecar events
   useEffect(() => {
