@@ -3,7 +3,7 @@
 /// Production mode: after bootstrap, spawns venv/Scripts/python.exe -m uvicorn revoice.main:app
 /// Dev mode: assumes backend is already running on port 7851
 use anyhow::{Context, Result};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, Emitter};
 
 const BACKEND_PORT: u16 = 7851;
@@ -45,6 +45,12 @@ pub async fn start_sidecar(handle: &AppHandle) -> Result<()> {
         }
         return Ok(());
     }
+
+    // 0. Свежесть бэкенда: исходники в runtime/revoice обязаны совпадать
+    // с версией приложения, иначе пользователи навсегда сидят на первом
+    // распакованном бэкенде (bootstrap скипается на готовом окружении!).
+    // Маркер: runtime/revoice/.src_version == CARGO_PKG_VERSION.
+    ensure_backend_fresh(handle, &data_dir).await;
 
     // Production mode
     // 1. Bootstrap if needed
@@ -151,6 +157,62 @@ pub async fn start_sidecar(handle: &AppHandle) -> Result<()> {
     // We store it so it lives as long as the app
     std::mem::forget(child);
 
+    Ok(())
+}
+
+/// Привести исходники бэкенда в соответствие версии приложения.
+/// Вызывается при КАЖДОМ старте (в отличие от bootstrap, который скипается).
+async fn ensure_backend_fresh(handle: &AppHandle, data_dir: &Path) {
+    let dest = data_dir.join("runtime").join("revoice");
+    let marker = dest.join(".src_version");
+    let ok = std::fs::read_to_string(&marker)
+        .map(|v| v.trim() == env!("CARGO_PKG_VERSION"))
+        .unwrap_or(false);
+    if ok {
+        return;
+    }
+    log::info!("backend sources outdated/missing, refreshing...");
+    // Убить stale-бэкенды именно наши (по командной строке), чужой python не трогаем.
+    let _ = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile", "-Command",
+            "Get-WmiObject Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'revoice\\.main' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
+        ])
+        .output();
+    std::fs::remove_dir_all(&dest).ok();
+    // Распаковка из backend.zip (код заимствован из bootstrap-логики)
+    if let Ok(resource_dir) = handle.path().resource_dir() {
+        let backend_zip = resource_dir.join("backend.zip");
+        if backend_zip.exists() {
+            if std::fs::create_dir_all(&dest).is_ok() {
+                if extract_backend_zip(&backend_zip, &dest).is_ok() {
+                    std::fs::write(&marker, env!("CARGO_PKG_VERSION")).ok();
+                    log::info!("backend refreshed to {}", env!("CARGO_PKG_VERSION"));
+                    return;
+                }
+            }
+        }
+        log::warn!("backend.zip not found at {:?}, backend stays stale", backend_zip);
+    }
+}
+
+/// Распаковать backend.zip в dest (zip crate уже в зависимостях).
+fn extract_backend_zip(zip_path: &Path, dest: &Path) -> anyhow::Result<()> {
+    let file = std::fs::File::open(zip_path)?;
+    let mut archive = zip::ZipArchive::new(file)?;
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i)?;
+        let outpath = dest.join(entry.name());
+        if entry.name().ends_with('/') {
+            std::fs::create_dir_all(&outpath)?;
+        } else {
+            if let Some(parent) = outpath.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let mut out_file = std::fs::File::create(&outpath)?;
+            std::io::copy(&mut entry, &mut out_file)?;
+        }
+    }
     Ok(())
 }
 
