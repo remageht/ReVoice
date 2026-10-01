@@ -51,7 +51,8 @@ export default function App() {
     }
   }, [isSuccess, isError, error, health, dataUpdatedAt, backendReady, setBackendReady])
 
-  // Listen for Tauri sidecar events  useEffect(() => {
+  // Listen for Tauri sidecar events
+  useEffect(() => {
     const unlisten1 = listen('sidecar-ready', () => {
       setBackendReady(true)
       setSidecarError(null)
