@@ -51,8 +51,7 @@ export default function App() {
     }
   }, [isSuccess, isError, error, health, dataUpdatedAt, backendReady, setBackendReady])
 
-  // Listen for Tauri sidecar events
-  useEffect(() => {
+  // Listen for Tauri sidecar events  useEffect(() => {
     const unlisten1 = listen('sidecar-ready', () => {
       setBackendReady(true)
       setSidecarError(null)
@@ -78,13 +77,24 @@ export default function App() {
     }
   }
 
+  const retryBackend = async () => {
+    setHealthFails(0)
+    setSidecarError(null)
+    setHealthNote('перезапуск бэкенда...')
+    try {
+      await apiHealth.restartBackend()
+    } catch (e) {
+      setSidecarError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   return (
     <div className="flex h-screen w-screen bg-surface text-white overflow-hidden">
       <Sidebar />
       <main className="flex-1 overflow-hidden relative">
         {!backendReady && (
           <div className="absolute inset-0 bg-surface/80 backdrop-blur-sm z-50 flex items-center justify-center">
-            <BackendStatus error={sidecarError} diag={`${healthNote} (фейлов: ${healthFails})`} />
+            <BackendStatus error={sidecarError} diag={`${healthNote} (фейлов: ${healthFails})`} onRetry={retryBackend} />
           </div>
         )}
         <div className="h-full overflow-y-auto">

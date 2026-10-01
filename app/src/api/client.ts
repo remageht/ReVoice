@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { invoke } from '@tauri-apps/api/core'
 
 const BASE_URL = 'http://127.0.0.1:7851'
 
@@ -145,7 +146,20 @@ export const apiSynth = {
 }
 
 export const apiHealth = {
-  check: () => api.get<HealthInfo>('/api/health', { timeout: 3000 }).then(r => r.data),
+  // Сначала axios напрямую; при Network Error (webview-сеть: прокси/AV/фаервол
+  // режут loopback у рендера) — фолбэк на Rust-сайдкар (reqwest вне webview).
+  check: async (): Promise<HealthInfo> => {
+    try {
+      return await api.get<HealthInfo>('/api/health', { timeout: 3000 }).then(r => r.data)
+    } catch (e: any) {
+      const msg = e?.message || String(e)
+      if (msg.includes('Network Error') || e?.code === 'ERR_NETWORK') {
+        return await invoke<HealthInfo>('health_check')
+      }
+      throw e
+    }
+  },
+  restartBackend: () => invoke<void>('restart_sidecar'),
 }
 
 export interface BookChapter {

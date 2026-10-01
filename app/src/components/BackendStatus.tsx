@@ -11,9 +11,10 @@ interface BootstrapProgress {
 interface BackendStatusProps {
   error?: string | null
   diag?: string | null
+  onRetry?: () => void
 }
 
-export function BackendStatus({ error, diag }: BackendStatusProps) {
+export function BackendStatus({ error, diag, onRetry }: BackendStatusProps) {
   const [progress, setProgress] = useState<BootstrapProgress | null>(null)
   const [isBootstrapping, setIsBootstrapping] = useState(false)
   const [spinnerSeconds, setSpinnerSeconds] = useState(0)
@@ -52,6 +53,14 @@ export function BackendStatus({ error, diag }: BackendStatusProps) {
           <span className="font-mono mx-1">%APPDATA%\Revoice\runtime</span>
           и запустите снова.
         </p>
+        {onRetry && (
+          <button
+            onClick={onRetry}
+            className="mt-2 px-4 py-2 rounded-lg bg-brand-500 hover:bg-brand-400 text-white text-sm font-medium"
+          >
+            Перезапустить бэкенд
+          </button>
+        )}
       </div>
     )
   }
