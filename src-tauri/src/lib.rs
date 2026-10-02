@@ -77,6 +77,7 @@ pub fn run() {
             commands::get_data_dir,
             commands::get_backend_url,
             commands::health_check,
+            commands::backend_request,
             commands::restart_sidecar,
             commands::synthesize_clipboard,
         ])

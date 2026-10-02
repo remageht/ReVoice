@@ -3,7 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { Play, Loader2, Volume2, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { apiSynth, apiProfiles } from '../../api/client'
+import { apiSynth, apiProfiles, getLastTransport, formatWithTransport } from '../../api/client'
 import { useAppStore } from '../../store/useAppStore'
 
 export function SynthesizeTab() {
@@ -25,11 +25,11 @@ export function SynthesizeTab() {
     }),
     onSuccess: (data) => {
       setLastResult(data)
-      toast.success(`Синтез завершён: ${data.duration_sec?.toFixed(1)} сек`)
+      toast.success(`Синтез завершён: ${data.duration_sec?.toFixed(1)} сек [${getLastTransport()}]`)
     },
     onError: (e: any) => {
-      const msg = e.response?.data?.detail || e.message || 'Ошибка синтеза'
-      toast.error(msg)
+      const detail = e.response?.data?.detail || e.message || 'Ошибка синтеза'
+      toast.error(formatWithTransport(detail, e.transport || getLastTransport()))
     },
   })
 

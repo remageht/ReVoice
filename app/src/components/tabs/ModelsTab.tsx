@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { clsx } from 'clsx'
-import { apiModels, ModelItem } from '../../api/client'
+import { apiModels, ModelItem, getLastTransport, formatWithTransport } from '../../api/client'
 
 export function ModelsTab() {
   const qc = useQueryClient()
@@ -45,31 +45,44 @@ export function ModelsTab() {
     mutationFn: (id: string) => apiModels.download(id),
     onSuccess: (_, id) => {
       qc.invalidateQueries({ queryKey: ['models'] })
-      toast.success('Скачивание запущено (с поддержкой докачки)')
+      toast.success(`Скачивание запущено (с поддержкой докачки) [${getLastTransport()}]`)
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Ошибка запуска скачивания'),
+    onError: (e: any) => {
+      const detail = e.response?.data?.detail || e.message || 'Ошибка запуска скачивания'
+      toast.error(formatWithTransport(detail, e.transport || getLastTransport()))
+    },
   })
 
   const loadMutation = useMutation({
     mutationFn: (id: string) => apiModels.load(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['models'] })
-      toast.success('Модель загружена в VRAM (предыдущие выгружены)')
+      toast.success(`Модель загружена в VRAM (предыдущие выгружены) [${getLastTransport()}]`)
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Ошибка загрузки'),
+    onError: (e: any) => {
+      const detail = e.response?.data?.detail || e.message || 'Ошибка загрузки'
+      toast.error(formatWithTransport(detail, e.transport || getLastTransport()))
+    },
   })
 
   const unloadMutation = useMutation({
     mutationFn: (id: string) => apiModels.unload(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['models'] })
-      toast.success('Модель выгружена, VRAM освобождён')
+      toast.success(`Модель выгружена, VRAM освобождён [${getLastTransport()}]`)
+    },
+    onError: (e: any) => {
+      const detail = e.response?.data?.detail || e.message || 'Ошибка выгрузки'
+      toast.error(formatWithTransport(detail, e.transport || getLastTransport()))
     },
   })
 
   const openFolderMutation = useMutation({
     mutationFn: (id: string) => apiModels.openFolder(id),
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Не удалось открыть папку'),
+    onError: (e: any) => {
+      const detail = e.response?.data?.detail || e.message || 'Не удалось открыть папку'
+      toast.error(formatWithTransport(detail, e.transport || getLastTransport()))
+    },
   })
 
   const setPathMutation = useMutation({
@@ -79,14 +92,16 @@ export function ModelsTab() {
       if (data.warning) {
         toast.warning(data.warning)
       } else {
-        toast.success('Путь успешно привязан')
+        toast.success(`Путь успешно привязан [${getLastTransport()}]`)
       }
       setSelectedModelForPath(null)
       setCustomPathInput('')
       setValidationError(null)
     },
     onError: (e: any) => {
-      setValidationError(e.response?.data?.detail || 'Ошибка валидации папки')
+      const detail = e.response?.data?.detail || e.message || 'Ошибка валидации папки'
+      setValidationError(formatWithTransport(detail, e.transport || getLastTransport()))
+      toast.error(formatWithTransport(detail, e.transport || getLastTransport()))
     },
   })
 
@@ -96,10 +111,13 @@ export function ModelsTab() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['models-dir'] })
       qc.invalidateQueries({ queryKey: ['models'] })
-      toast.success(`Папка обновлена (перенесено файлов: ${data.migrated_count})`)
+      toast.success(`Папка обновлена (перенесено файлов: ${data.migrated_count}) [${getLastTransport()}]`)
       setShowDirModal(false)
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Ошибка переноса папки'),
+    onError: (e: any) => {
+      const detail = e.response?.data?.detail || e.message || 'Ошибка переноса папки'
+      toast.error(formatWithTransport(detail, e.transport || getLastTransport()))
+    },
   })
 
   if (isLoading) {

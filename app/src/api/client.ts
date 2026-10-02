@@ -77,25 +77,184 @@ export interface Generation {
   engine: string
 }
 
+export type TransportType = 'axios' | 'rust'
+export let lastUsedTransport: TransportType = 'axios'
+
+export function getLastTransport(): TransportType {
+  return lastUsedTransport
+}
+
+export function formatWithTransport(msg: string, transport: TransportType = lastUsedTransport): string {
+  if (msg.endsWith('[axios]') || msg.endsWith('[rust]')) {
+    return msg
+  }
+  return `${msg} [${transport}]`
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const res = reader.result as string
+      const base64 = res.includes(',') ? res.split(',')[1] : res
+      resolve(base64)
+    }
+    reader.onerror = (e) => reject(e)
+    reader.readAsDataURL(file)
+  })
+}
+
+export async function viaBackend<T = any>(
+  method: string,
+  path: string,
+  body?: any
+): Promise<T> {
+  let fullPath = path
+  const methodUpper = method.toUpperCase()
+  if (methodUpper === 'GET' && body && typeof body === 'object') {
+    const query = new URLSearchParams()
+    for (const [k, v] of Object.entries(body)) {
+      if (v !== undefined && v !== null) {
+        query.append(k, String(v))
+      }
+    }
+    const qStr = query.toString()
+    if (qStr) {
+      fullPath = fullPath.includes('?') ? `${fullPath}&${qStr}` : `${fullPath}?${qStr}`
+    }
+  }
+
+  const axiosTimeout = fullPath.startsWith('/api/health') ? 3000 : 120000
+
+  // 1. Попытка через axios
+  try {
+    let res: any
+    if (methodUpper === 'GET') {
+      res = await api.get<T>(fullPath, { timeout: axiosTimeout })
+    } else if (methodUpper === 'POST') {
+      res = await api.post<T>(fullPath, body, { timeout: axiosTimeout })
+    } else if (methodUpper === 'PATCH') {
+      res = await api.patch<T>(fullPath, body, { timeout: axiosTimeout })
+    } else if (methodUpper === 'PUT') {
+      res = await api.put<T>(fullPath, body, { timeout: axiosTimeout })
+    } else if (methodUpper === 'DELETE') {
+      res = await api.delete<T>(fullPath, { data: body, timeout: axiosTimeout })
+    } else {
+      throw new Error(`Неподдерживаемый метод ${method}`)
+    }
+    lastUsedTransport = 'axios'
+    return res.data
+  } catch (axiosErr: any) {
+    const msg = axiosErr?.message || String(axiosErr)
+    const isNetworkError =
+      msg.includes('Network Error') ||
+      axiosErr?.code === 'ERR_NETWORK' ||
+      axiosErr?.code === 'ECONNABORTED' ||
+      !axiosErr.response
+
+    if (isNetworkError) {
+      // 2. Фолбэк через Rust backend_request
+      try {
+        const data = await invoke<T>('backend_request', {
+          method: methodUpper,
+          path: fullPath,
+          body: body !== undefined && methodUpper !== 'GET' ? body : null,
+        })
+        lastUsedTransport = 'rust'
+        return data
+      } catch (rustErr: any) {
+        lastUsedTransport = 'rust'
+        const rustMsg = typeof rustErr === 'string' ? rustErr : (rustErr?.message || String(rustErr))
+        const tagged = formatWithTransport(rustMsg, 'rust')
+        const err: any = new Error(tagged)
+        err.transport = 'rust'
+        err.response = { data: { detail: tagged } }
+        throw err
+      }
+    }
+
+    // Axios дошёл до сервера, но сервер вернул HTTP ошибку (4xx/5xx)
+    lastUsedTransport = 'axios'
+    const detail = axiosErr?.response?.data?.detail || axiosErr?.message || 'Ошибка сервера'
+    const tagged = formatWithTransport(detail, 'axios')
+    axiosErr.transport = 'axios'
+    if (axiosErr.response) {
+      if (!axiosErr.response.data) axiosErr.response.data = {}
+      axiosErr.response.data.detail = tagged
+    }
+    axiosErr.message = tagged
+    throw axiosErr
+  }
+}
+
 // API functions
 export const apiProfiles = {
-  list: () => api.get<Profile[]>('/api/profiles').then(r => r.data),
-  get: (id: string) => api.get<Profile>(`/api/profiles/${id}`).then(r => r.data),
+  list: () => viaBackend<Profile[]>('GET', '/api/profiles'),
+  get: (id: string) => viaBackend<Profile>('GET', `/api/profiles/${id}`),
   create: (data: { name: string; description?: string; language: string; default_engine?: string }) =>
-    api.post<Profile>('/api/profiles', data).then(r => r.data),
+    viaBackend<Profile>('POST', '/api/profiles', data),
   update: (id: string, data: Partial<Profile>) =>
-    api.patch<Profile>(`/api/profiles/${id}`, data).then(r => r.data),
-  delete: (id: string) => api.delete(`/api/profiles/${id}`),
-  addSample: (profileId: string, file: File, referenceText: string) => {
+    viaBackend<Profile>('PATCH', `/api/profiles/${id}`, data),
+  delete: (id: string) => viaBackend<void>('DELETE', `/api/profiles/${id}`),
+  addSample: async (profileId: string, file: File, referenceText: string): Promise<Sample> => {
     const form = new FormData()
     form.append('audio', file)
     form.append('reference_text', referenceText)
-    return api.post<Sample>(`/api/profiles/${profileId}/samples`, form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    }).then(r => r.data)
+    try {
+      const res = await api.post<Sample>(`/api/profiles/${profileId}/samples`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      lastUsedTransport = 'axios'
+      return res.data
+    } catch (axiosErr: any) {
+      const msg = axiosErr?.message || String(axiosErr)
+      const isNetworkError =
+        msg.includes('Network Error') ||
+        axiosErr?.code === 'ERR_NETWORK' ||
+        axiosErr?.code === 'ECONNABORTED' ||
+        !axiosErr.response
+
+      if (isNetworkError) {
+        const base64Data = await fileToBase64(file)
+        const payload = {
+          _multipart: true,
+          reference_text: referenceText,
+          file_name: file.name,
+          file_base64: base64Data,
+        }
+        try {
+          const data = await invoke<Sample>('backend_request', {
+            method: 'POST',
+            path: `/api/profiles/${profileId}/samples`,
+            body: payload,
+          })
+          lastUsedTransport = 'rust'
+          return data
+        } catch (rustErr: any) {
+          lastUsedTransport = 'rust'
+          const rustMsg = typeof rustErr === 'string' ? rustErr : (rustErr?.message || String(rustErr))
+          const tagged = formatWithTransport(rustMsg, 'rust')
+          const err: any = new Error(tagged)
+          err.transport = 'rust'
+          err.response = { data: { detail: tagged } }
+          throw err
+        }
+      }
+
+      lastUsedTransport = 'axios'
+      const detail = axiosErr?.response?.data?.detail || axiosErr?.message || 'Ошибка загрузки сэмпла'
+      const tagged = formatWithTransport(detail, 'axios')
+      axiosErr.transport = 'axios'
+      if (axiosErr.response) {
+        if (!axiosErr.response.data) axiosErr.response.data = {}
+        axiosErr.response.data.detail = tagged
+      }
+      axiosErr.message = tagged
+      throw axiosErr
+    }
   },
   deleteSample: (profileId: string, sampleId: string) =>
-    api.delete(`/api/profiles/${profileId}/samples/${sampleId}`),
+    viaBackend<void>('DELETE', `/api/profiles/${profileId}/samples/${sampleId}`),
 }
 
 export interface ModelItem {
@@ -120,15 +279,15 @@ export interface ModelItem {
 }
 
 export const apiModels = {
-  list: () => api.get<ModelItem[]>('/api/models').then(r => r.data),
-  getDir: () => api.get<{ models_dir: string; is_env_overridden: boolean }>('/api/models/dir').then(r => r.data),
+  list: () => viaBackend<ModelItem[]>('GET', '/api/models'),
+  getDir: () => viaBackend<{ models_dir: string; is_env_overridden: boolean }>('GET', '/api/models/dir'),
   migrateDir: (newDir: string, moveFiles: boolean = true) =>
-    api.post('/api/models/dir/migrate', { new_dir: newDir, move_files: moveFiles }).then(r => r.data),
-  download: (id: string) => api.post(`/api/models/${id}/download`).then(r => r.data),
-  setPath: (id: string, path: string) => api.post(`/api/models/${id}/set-path`, { path }).then(r => r.data),
-  load: (id: string) => api.post(`/api/models/${id}/load`, { device: 'cuda' }).then(r => r.data),
-  unload: (id: string) => api.post(`/api/models/${id}/unload`).then(r => r.data),
-  openFolder: (id: string) => api.post(`/api/models/${id}/open-folder`).then(r => r.data),
+    viaBackend('POST', '/api/models/dir/migrate', { new_dir: newDir, move_files: moveFiles }),
+  download: (id: string) => viaBackend('POST', `/api/models/${id}/download`),
+  setPath: (id: string, path: string) => viaBackend('POST', `/api/models/${id}/set-path`, { path }),
+  load: (id: string) => viaBackend('POST', `/api/models/${id}/load`, { device: 'cuda' }),
+  unload: (id: string) => viaBackend('POST', `/api/models/${id}/unload`),
+  openFolder: (id: string) => viaBackend('POST', `/api/models/${id}/open-folder`),
 }
 
 export const apiSynth = {
@@ -140,25 +299,13 @@ export const apiSynth = {
     seed?: number
     max_chunk_chars?: number
     normalize?: boolean
-  }) => api.post<Generation>('/api/synthesize', data).then(r => r.data),
+  }) => viaBackend<Generation>('POST', '/api/synthesize', data),
   history: (profileId?: string, limit?: number) =>
-    api.get<any[]>('/api/history', { params: { profile_id: profileId, limit } }).then(r => r.data),
+    viaBackend<any[]>('GET', '/api/history', { profile_id: profileId, limit }),
 }
 
 export const apiHealth = {
-  // Сначала axios напрямую; при Network Error (webview-сеть: прокси/AV/фаервол
-  // режут loopback у рендера) — фолбэк на Rust-сайдкар (reqwest вне webview).
-  check: async (): Promise<HealthInfo> => {
-    try {
-      return await api.get<HealthInfo>('/api/health', { timeout: 3000 }).then(r => r.data)
-    } catch (e: any) {
-      const msg = e?.message || String(e)
-      if (msg.includes('Network Error') || e?.code === 'ERR_NETWORK') {
-        return await invoke<HealthInfo>('health_check')
-      }
-      throw e
-    }
-  },
+  check: () => viaBackend<HealthInfo>('GET', '/api/health'),
   restartBackend: () => invoke<void>('restart_sidecar'),
 }
 
@@ -179,9 +326,9 @@ export interface ParseBookResponse {
 
 export const apiBook = {
   parse: (text: string, title?: string, author?: string) =>
-    api.post<ParseBookResponse>('/api/book/parse', { text, title, author }).then(r => r.data),
+    viaBackend<ParseBookResponse>('POST', '/api/book/parse', { text, title, author }),
   markup: (text: string, intensity: 'subtle' | 'moderate' | 'dramatic' = 'moderate') =>
-    api.post<{ original: string; marked_up: string }>('/api/book/markup', { text, intensity }).then(r => r.data),
+    viaBackend<{ original: string; marked_up: string }>('POST', '/api/book/markup', { text, intensity }),
   synthesizeBook: (data: {
     profile_id: string
     chapters: Array<{ title: string; text: string }>
@@ -189,10 +336,10 @@ export const apiBook = {
     language?: string
     book_title?: string
     author?: string
-  }) => api.post<{
+  }) => viaBackend<{
     status: string
     output_path: string
     total_duration_sec: number
     chapters_count: number
-  }>('/api/book/synthesize-book', data).then(r => r.data),
+  }>('POST', '/api/book/synthesize-book', data),
 }

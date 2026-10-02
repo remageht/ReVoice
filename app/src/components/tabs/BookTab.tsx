@@ -4,7 +4,7 @@ import { BookOpen, Sparkles, Play, Loader2, CheckCircle2, FileText, Upload } fro
 import { toast } from 'sonner'
 import { clsx } from 'clsx'
 
-import { apiBook, apiProfiles, apiModels } from '../../api/client'
+import { apiBook, apiProfiles, apiModels, getLastTransport, formatWithTransport } from '../../api/client'
 import { useAppStore } from '../../store/useAppStore'
 
 export function BookTab() {
@@ -35,10 +35,11 @@ export function BookTab() {
     mutationFn: () => apiBook.markup(text, intensity),
     onSuccess: (data) => {
       setText(data.marked_up)
-      toast.success('Текст размечен под выразительное чтение!')
+      toast.success(`Текст размечен под выразительное чтение! [${getLastTransport()}]`)
     },
     onError: (e: any) => {
-      toast.error(e.response?.data?.detail || 'Не удалось разметить текст')
+      const detail = e.response?.data?.detail || e.message || 'Не удалось разметить текст'
+      toast.error(formatWithTransport(detail, e.transport || getLastTransport()))
     },
   })
 
@@ -54,10 +55,11 @@ export function BookTab() {
     }),
     onSuccess: (data) => {
       setResult(data)
-      toast.success(`Аудиокнига M4B готова! (${data.total_duration_sec} сек)`)
+      toast.success(`Аудиокнига M4B готова! (${data.total_duration_sec} сек) [${getLastTransport()}]`)
     },
     onError: (e: any) => {
-      toast.error(e.response?.data?.detail || 'Ошибка синтеза аудиокниги')
+      const detail = e.response?.data?.detail || e.message || 'Ошибка синтеза аудиокниги'
+      toast.error(formatWithTransport(detail, e.transport || getLastTransport()))
     },
   })
 

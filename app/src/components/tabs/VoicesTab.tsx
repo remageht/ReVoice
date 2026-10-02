@@ -4,7 +4,7 @@ import { Plus, Mic2, Trash2, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { clsx } from 'clsx'
 
-import { apiProfiles, Profile } from '../../api/client'
+import { apiProfiles, Profile, getLastTransport, formatWithTransport } from '../../api/client'
 import { useAppStore } from '../../store/useAppStore'
 import { ProfileDetail } from '../ProfileDetail'
 import { CreateProfileModal } from '../CreateProfileModal'
@@ -24,7 +24,11 @@ export function VoicesTab() {
     onSuccess: (_, id) => {
       qc.invalidateQueries({ queryKey: ['profiles'] })
       if (activeProfileId === id) setActiveProfileId(null)
-      toast.success('Профиль удалён')
+      toast.success(`Профиль удалён [${getLastTransport()}]`)
+    },
+    onError: (e: any) => {
+      const detail = e.response?.data?.detail || e.message || 'Ошибка удаления профиля'
+      toast.error(formatWithTransport(detail, e.transport || getLastTransport()))
     },
   })
 

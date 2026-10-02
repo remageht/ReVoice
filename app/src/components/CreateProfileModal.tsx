@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { toast } from 'sonner'
-import { apiProfiles } from '../api/client'
+import { apiProfiles, getLastTransport, formatWithTransport } from '../api/client'
 import { useAppStore } from '../store/useAppStore'
 
 const LANGUAGES = [
@@ -30,10 +30,13 @@ export function CreateProfileModal({ onClose }: Props) {
     onSuccess: (profile) => {
       qc.invalidateQueries({ queryKey: ['profiles'] })
       setActiveProfileId(profile.id)
-      toast.success('Профиль создан')
+      toast.success(`Профиль создан [${getLastTransport()}]`)
       onClose()
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Ошибка создания профиля'),
+    onError: (e: any) => {
+      const detail = e.response?.data?.detail || e.message || 'Ошибка создания профиля'
+      toast.error(formatWithTransport(detail, e.transport || getLastTransport()))
+    },
   })
 
   return (

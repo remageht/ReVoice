@@ -13,7 +13,7 @@ import { useDropzone } from 'react-dropzone'
 import { toast } from 'sonner'
 import { clsx } from 'clsx'
 
-import { apiProfiles, Sample } from '../api/client'
+import { apiProfiles, Sample, getLastTransport, formatWithTransport } from '../api/client'
 
 interface Props {
   profileId: string
@@ -34,8 +34,12 @@ export function ProfileDetail({ profileId }: Props) {
     mutationFn: (sampleId: string) => apiProfiles.deleteSample(profileId, sampleId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['profiles'] })
-      toast.success('Сэмпл удалён')
+      toast.success(`Сэмпл удалён [${getLastTransport()}]`)
       setSelectedSample(null)
+    },
+    onError: (e: any) => {
+      const detail = e.response?.data?.detail || e.message || 'Ошибка удаления сэмпла'
+      toast.error(formatWithTransport(detail, e.transport || getLastTransport()))
     },
   })
 
@@ -52,13 +56,14 @@ export function ProfileDetail({ profileId }: Props) {
       const sample = await apiProfiles.addSample(profileId, file, refText)
       qc.invalidateQueries({ queryKey: ['profiles'] })
       if (sample.is_valid) {
-        toast.success(`Эталон принят: ${sample.verdict || 'Годен к синтезу'}`)
+        toast.success(`Эталон принят: ${sample.verdict || 'Годен к синтезу'} [${getLastTransport()}]`)
       } else {
-        toast.error(`Сэмпл отклонён: ${sample.rejection_reason}`)
+        toast.error(`Сэмпл отклонён: ${sample.rejection_reason} [${getLastTransport()}]`)
       }
       setRefText('')
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || 'Ошибка загрузки')
+      const detail = e.response?.data?.detail || e.message || 'Ошибка загрузки'
+      toast.error(formatWithTransport(detail, e.transport || getLastTransport()))
     } finally {
       setUploading(false)
     }
